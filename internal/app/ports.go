@@ -88,6 +88,7 @@ type ProtocolEngine interface {
 	PrepareClientProfile(context.Context, EngineProfileInput) error
 	ProbeAccount(context.Context, EngineRegistrationInput) EngineProbeResult
 	RequestVerificationCode(context.Context, EngineRegistrationInput) EngineCodeResult
+	RefreshAccountTransferChallenge(context.Context, EngineAccountTransferChallengeInput) EngineAccountTransferChallengeResult
 	SubmitVerificationCode(context.Context, EngineSubmitInput) EngineRegisterResult
 	CheckLoginState(context.Context, EngineLoginCheckInput) EngineLoginCheckResult
 	ReceiveMessageBatch(context.Context, EngineMessageInput) EngineMessageBatchResult
@@ -118,6 +119,11 @@ type EngineSubmitInput struct {
 	VerificationRequestID string
 	Code                  string
 	CodeSecretRef         string
+}
+
+type EngineAccountTransferChallengeInput struct {
+	EngineRegistrationInput
+	VerificationRequestID string
 }
 
 type EngineLoginCheckInput struct {
@@ -218,14 +224,20 @@ const (
 )
 
 type EngineCodeResult struct {
-	Status             waappv1.VerificationRequestStatus
-	ExpectedCodeLength int32
-	ExpiresAt          time.Time
-	RetryAfter         time.Duration
-	MethodStatuses     []VerificationMethodStatus
-	RawStatus          string
-	RawReason          string
-	Err                error
+	Status                   waappv1.VerificationRequestStatus
+	ExpectedCodeLength       int32
+	ExpiresAt                time.Time
+	RetryAfter               time.Duration
+	MethodStatuses           []VerificationMethodStatus
+	AccountTransferChallenge *waappv1.AccountTransferChallenge
+	RawStatus                string
+	RawReason                string
+	Err                      error
+}
+
+type EngineAccountTransferChallengeResult struct {
+	Challenge *waappv1.AccountTransferChallenge
+	Err       error
 }
 
 type EngineRegisterResult struct {

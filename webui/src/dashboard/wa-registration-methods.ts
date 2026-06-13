@@ -18,6 +18,7 @@ export const selectableRegistrationMethods: SelectableRegistrationMethodOption[]
   methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_SMS, 'sms'),
   methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_VOICE, 'voice'),
   methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_WA_OLD, 'wa_old'),
+  methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER, 'acc_tr'),
   methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_EMAIL_OTP, 'email_otp'),
   methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_SEND_SMS, 'send_sms'),
 ];

@@ -61,6 +61,10 @@ func (g *actionGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		result, err = g.resumeOTP(r.Context(), payload)
 	case "registration/submit-otp":
 		result, err = g.submitOTP(r.Context(), payload)
+	case "registration/account-transfer/refresh":
+		result, err = g.refreshAccountTransferChallenge(r.Context(), payload)
+	case "registration/account-transfer/poll":
+		result, err = g.pollAccountTransferRegistration(r.Context(), payload)
 	case "registration/cleanup-failed-account":
 		result, err = g.cleanupFailedRegistration(r.Context(), payload)
 	case "registration/persist-login-state":
@@ -195,6 +199,10 @@ func (g *actionGateway) requestSMSOTP(ctx context.Context, payload map[string]an
 		"verification_request":    protoMap(record),
 		"method_statuses":         protoMethodStatusMaps(record.GetMethodStatuses()),
 		"proxy":                   registrationProxyRouteMap(route, managedRoute),
+	}
+	if challenge := resp.GetAccountTransferChallenge(); challenge != nil {
+		response["account_transfer_challenge"] = protoMap(challenge)
+		response["registration_phase"] = "ACCOUNT_TRANSFER_WAITING"
 	}
 	if seconds := durationSeconds(record.GetRetryAfter()); seconds > 0 {
 		response["retry_after_seconds"] = seconds
@@ -383,6 +391,84 @@ func (g *actionGateway) submitOTP(ctx context.Context, payload map[string]any) (
 	}, nil
 }
 
+func (g *actionGateway) refreshAccountTransferChallenge(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	resp, err := g.server.RefreshAccountTransferChallenge(ctx, &waappv1.RefreshAccountTransferChallengeRequest{
+		Context:               actionContext(payload),
+		VerificationRequestId: textField(payload, "verification_request_id"),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.GetError() != nil {
+		return map[string]any{"success": false, "error": protoMap(resp.GetError()), "error_message": resp.GetError().GetMessage()}, nil
+	}
+	return map[string]any{
+		"success":                    true,
+		"registration_phase":         "ACCOUNT_TRANSFER_WAITING",
+		"account_transfer_challenge": protoMap(resp.GetAccountTransferChallenge()),
+	}, nil
+}
+
+func (g *actionGateway) pollAccountTransferRegistration(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	attempts := int(numberField(payload, "max_attempts"))
+	if attempts <= 0 {
+		attempts = 1
+	}
+	if attempts > 100 {
+		attempts = 100
+	}
+	interval := time.Duration(numberField(payload, "interval_seconds")) * time.Second
+	var result map[string]any
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 && interval > 0 {
+			timer := time.NewTimer(interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
+		}
+		submitPayload := cloneActionPayload(payload)
+		submitPayload["code"] = ""
+		resultValue, err := g.submitOTP(ctx, submitPayload)
+		if err != nil {
+			return nil, err
+		}
+		result = resultValue
+		if boolField(result, "success") {
+			_ = g.deleteRegistrationOTPWait(ctx, registrationOTPWait{WAAccountID: textField(payload, "wa_account_id"), VerificationRequestID: textField(payload, "verification_request_id")})
+			result["attempts"] = attempt + 1
+			return result, nil
+		}
+		if !accountTransferPollRetryable(result) {
+			result["attempts"] = attempt + 1
+			return result, nil
+		}
+	}
+	if result == nil {
+		result = map[string]any{"success": false}
+	}
+	result["registration_phase"] = "ACCOUNT_TRANSFER_WAITING"
+	result["attempts"] = attempts
+	return result, nil
+}
+
+func accountTransferPollRetryable(result map[string]any) bool {
+	if result == nil {
+		return true
+	}
+	if textField(result, "status") == waappv1.RegistrationStatus_REGISTRATION_STATUS_SUBMITTED.String() {
+		return true
+	}
+	errorMap := objectField(result, "error")
+	if boolField(errorMap, "retryable") {
+		return true
+	}
+	message := strings.ToLower(firstNonEmpty(textField(result, "error_message"), textField(errorMap, "message")))
+	return strings.Contains(message, "pending") || strings.Contains(message, "temporarily") || strings.Contains(message, "too_recent")
+}
+
 func (g *actionGateway) cleanupFailedRegistration(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	reqCtx := actionContext(payload)
 	accountID := cleanupWAAccountID(payload)
@@ -554,7 +640,7 @@ func (s *Server) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1.Pro
 			waappv1.ProtocolCapability_PROTOCOL_CAPABILITY_MESSAGE_SESSION,
 			waappv1.ProtocolCapability_PROTOCOL_CAPABILITY_ACCOUNT_SETTINGS,
 		},
-		RegistrationFlows: []waappv1.RegistrationFlowKind{waappv1.RegistrationFlowKind_REGISTRATION_FLOW_KIND_NEW_ACCOUNT},
+		RegistrationFlows: []waappv1.RegistrationFlowKind{waappv1.RegistrationFlowKind_REGISTRATION_FLOW_KIND_NEW_ACCOUNT, waappv1.RegistrationFlowKind_REGISTRATION_FLOW_KIND_EXISTING_ACCOUNT},
 		MessageTransports: []waappv1.MessageTransportKind{waappv1.MessageTransportKind_MESSAGE_TRANSPORT_KIND_LONG_CONNECTION},
 		DiscoveredAt:      timestamppb.New(now),
 		Audit:             &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},

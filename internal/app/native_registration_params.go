@@ -67,15 +67,22 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	}
 	params.set("id", state.Profile.ID, true)
 	params.set("backup_token", state.Profile.BackupToken, true)
-	if token := e.registrationToken(phone, state); token != "" {
-		params.set("token", token, false)
+	if nativeRegistrationMethodUsesToken(methodName) {
+		if token := e.registrationToken(phone, state); token != "" {
+			params.set("token", token, false)
+		}
 	}
 	params.set("method", methodName, false)
-	if contextValue := strings.TrimSpace(authCodeContext); contextValue != "" {
-		params.set("context", contextValue, false)
+	if nativeRegistrationMethodUsesAuthContext(methodName) {
+		if contextValue := strings.TrimSpace(authCodeContext); contextValue != "" {
+			params.set("context", contextValue, false)
+		}
 	}
-	if advertisingID := nativeAdvertisingID(state); advertisingID != "" && shouldSendNativeAdvertisingID(phone) {
+	if advertisingID := nativeAdvertisingID(state); advertisingID != "" && shouldSendNativeAdvertisingID(phone) && nativeRegistrationMethodUsesAdvertisingID(methodName) {
 		params.set("advertising_id", advertisingID, false)
+	}
+	if methodName == "acc_tr" {
+		applyNativeCodeRequestPermissionParams(&params, fields)
 	}
 	applyNativeE2EParams(&params, state)
 	applyNativeCodeRequestMapParams(&params, fields, methodName)
@@ -93,6 +100,24 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	applyOrderedWamsysExcept(&params, capture, map[string]struct{}{"gpia": {}})
 	addOptionalRawParam(&params, "feo2_query_status", fields["feo2_query_status"])
 	return params, nil
+}
+
+func nativeRegistrationMethodUsesToken(methodName string) bool {
+	return methodName != "acc_tr"
+}
+
+func nativeRegistrationMethodUsesAuthContext(methodName string) bool {
+	return methodName != "acc_tr"
+}
+
+func nativeRegistrationMethodUsesAdvertisingID(methodName string) bool {
+	return methodName != "acc_tr"
+}
+
+func applyNativeCodeRequestPermissionParams(params *orderedParams, fields map[string]string) {
+	addRawParam(params, "clicked_education_link", firstNonEmpty(fields["clicked_education_link"], "-1"))
+	addRawParam(params, "manage_call_permission", firstNonEmpty(fields["manage_call_permission"], "false"))
+	addRawParam(params, "call_log_permission", firstNonEmpty(fields["call_log_permission"], "false"))
 }
 
 func applyNativeE2EParams(params *orderedParams, state nativeState) {
@@ -442,7 +467,10 @@ func parseExistProbeResult(data map[string]any) EngineProbeResult {
 	baseProtocolRejected := existProtocolRejected(status, reason)
 	invalidNumber := existInvalidNumberReason(reason)
 	rateLimited := existRateLimitedReason(reason)
-	registered := !baseProtocolRejected && !blocked && !invalidNumber && !rateLimited && (waOldFallbackEligible(data) || existRegisteredSignal(status, reason, data))
+	registered := !baseProtocolRejected && !blocked && !invalidNumber && !rateLimited && (waOldFallbackEligible(data) || accountTransferFallbackEligible(data) || existRegisteredSignal(status, reason, data))
+	if registered {
+		methodStatuses = upsertVerificationMethodStatus(methodStatuses, "acc_tr", verificationWaitStatus{Present: true})
+	}
 	protocolRejected := baseProtocolRejected
 	notRegistered := false
 	registeredKnown := registered || invalidNumber
@@ -597,6 +625,25 @@ func waProtocolError(data map[string]any, fallback string) error {
 	return NewError(code, message, retryable)
 }
 
+func accountTransferRegisterTerminalFailure(data map[string]any) bool {
+	reason := responseReason(data)
+	status := responseStatus(data)
+	switch reason {
+	case "mismatch", "bad_code", "bad_token", "fail_mismatch", "blocked", "fail_blocked", "missing", "fail_missing", "guessed_too_fast", "fail_guessed_too_fast", "security_code", "second_code", "device_confirm_or_second_code", "verified_standalone":
+		return true
+	case "too_recent", "too_many", "temporarily_unavailable":
+		return false
+	}
+	switch status {
+	case "rejected", "blocked", "fail", "failed":
+		return true
+	case "", "pending", "sent", "retry", "waiting", "temporarily_unavailable":
+		return false
+	default:
+		return false
+	}
+}
+
 func methodsFromStatuses(statuses []VerificationMethodStatus) []waappv1.VerificationDeliveryMethod {
 	seen := map[waappv1.VerificationDeliveryMethod]struct{}{}
 	out := make([]waappv1.VerificationDeliveryMethod, 0, len(statuses))
@@ -658,7 +705,7 @@ type verificationWaitStatus struct {
 	Present   bool
 }
 
-var apkDefaultRegistrationMethodOrder = []string{"flash", "sms", "voice"}
+var apkDefaultRegistrationMethodOrder = []string{"flash", "sms", "voice", "wa_old", "acc_tr", "send_sms", "email_otp"}
 
 func verificationMethodStatuses(data map[string]any, _ []waappv1.VerificationDeliveryMethod) []VerificationMethodStatus {
 	out := []VerificationMethodStatus{}
@@ -799,6 +846,15 @@ func waOldFallbackEligible(data map[string]any) bool {
 	return false
 }
 
+func accountTransferFallbackEligible(data map[string]any) bool {
+	for _, code := range fallbackVerificationMethodCodes(data) {
+		if code == "acc_tr" {
+			return verificationMethodEligibleForAPKUI(data, code)
+		}
+	}
+	return false
+}
+
 func verificationMethodEligibleForAPKUI(data map[string]any, code string) bool {
 	switch code {
 	case "sms", "voice", "flash":
@@ -809,6 +865,11 @@ func verificationMethodEligibleForAPKUI(data map[string]any, code string) bool {
 			return false
 		}
 		return eligibility != 0 && eligibility != 4
+	case "acc_tr":
+		if verificationExplicitlyEligible(data, "pref_acc_tr_eligibility", "acc_tr_eligible", "account_transfer_eligible") {
+			return true
+		}
+		return waOldFallbackEligible(data)
 	case "send_sms":
 		return verificationExplicitlyEligible(data, "pref_send_sms_eligibility", "send_sms_eligible", "can_send_sms_to_wa") && !verificationExplicitlyExhausted(data, "send_sms_attempts_exhausted", "pref_send_sms_attempts_exhausted")
 	case "email_otp":
@@ -865,6 +926,8 @@ func verificationMethodWaitValues(data map[string]any, code string) []any {
 		return []any{data["flash_wait"], data["flash_wait_time"], data["flash_retry_time"], data["pref_flash_wait_time"], data["EXTRA_FLASH_RETRY_TIME"]}
 	case "wa_old":
 		return []any{data["wa_old_wait"], data["wa_old_retry_time"], data["pref_wa_old_wait_time"], data["EXTRA_WA_OLD_RETRY_TIME"]}
+	case "acc_tr":
+		return []any{data["acc_tr_wait"], data["account_transfer_wait"], data["pref_acc_tr_wait_time"], data["EXTRA_ACC_TR_RETRY_TIME"]}
 	case "email_otp":
 		return []any{data["email_otp_wait"], data["email_otp_retry_time"], data["pref_email_otp_wait_time"], data["EXTRA_EMAIL_OTP_RETRY_TIME"]}
 	case "silent_auth":

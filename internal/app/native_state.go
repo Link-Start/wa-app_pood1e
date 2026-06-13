@@ -34,6 +34,7 @@ type nativeState struct {
 	LastCodeParams  map[string]string               `json:"last_code_params,omitempty"`
 	LastCodeResult  map[string]any                  `json:"last_code_result,omitempty"`
 	LastRegister    map[string]any                  `json:"last_register,omitempty"`
+	AccountTransfer nativeAccountTransferState      `json:"account_transfer,omitempty"`
 	RegistrationJID string                          `json:"registration_jid,omitempty"`
 	ChatRoutingInfo string                          `json:"chat_routing_info,omitempty"`
 	ChatConnection  nativeChatConnectionState       `json:"chat_connection,omitempty"`
@@ -154,6 +155,24 @@ type nativeMessagePayload struct {
 type nativePrivacyToken struct {
 	Token     string `json:"token"`
 	Timestamp int64  `json:"timestamp,omitempty"`
+}
+
+type nativeAccountTransferState struct {
+	Codes                  []string `json:"codes,omitempty"`
+	CurrentIndex           int      `json:"current_index,omitempty"`
+	RequestedAtUnix        int64    `json:"requested_at_unix,omitempty"`
+	ExpiresAtUnix          int64    `json:"expires_at_unix,omitempty"`
+	RotationIntervalSec    int64    `json:"rotation_interval_sec,omitempty"`
+	SessionID              string   `json:"session_id,omitempty"`
+	Certificate            string   `json:"certificate,omitempty"`
+	AuthToken              string   `json:"auth_token,omitempty"`
+	PeerID                 string   `json:"peer_id,omitempty"`
+	EncryptionKeyVersion   string   `json:"enc_key_version,omitempty"`
+	EncryptionAccountHash  string   `json:"enc_key_account_hash,omitempty"`
+	EncryptionKeySalt      string   `json:"enc_key_salt,omitempty"`
+	DeeplinkBase           string   `json:"deeplink_base,omitempty"`
+	AccountPhoneNumber     string   `json:"account_phone_number,omitempty"`
+	LastChallengeIssuedSec int64    `json:"last_challenge_issued_sec,omitempty"`
 }
 
 type nativeChatConnectionState struct {
