@@ -55,6 +55,7 @@ func (e *NativeEngine) codeRequestOrderedParams(ctx context.Context, phone *waap
 func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string, wamsysCapture *waappv1.WamsysCapture, includeWamsys bool) (orderedParams, error) {
 	methodName := registrationMethodName(method, "sms")
 	fields := nativeDeviceMapFields(state)
+	attempts := nativeCodeRequestAttempts(state)
 	params := orderedParams{}
 	params.set("cc", phoneCC(phone), false)
 	params.set("in", phoneNational(phone), false)
@@ -85,7 +86,7 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 		applyNativeCodeRequestPermissionParams(&params, fields)
 	}
 	applyNativeE2EParams(&params, state)
-	applyNativeCodeRequestMapParams(&params, fields, methodName)
+	applyNativeCodeRequestMapParams(&params, fields, methodName, attempts)
 	var capture *waappv1.WamsysCapture
 	if includeWamsys {
 		var err error
@@ -130,11 +131,11 @@ func applyNativeE2EParams(params *orderedParams, state nativeState) {
 	params.set("e_skey_sig", state.KeyBundle.SignedKeySig, false)
 }
 
-func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]string, method string) {
+func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]string, method string, attempts int) {
 	addOptionalRawParam(params, "mistyped", fields["mistyped"])
 	addRawParam(params, "reason", "")
 	addOptionalRawParam(params, "hasav", fields["hasav"])
-	addRawParam(params, "client_metrics", nativeCodeClientMetrics())
+	addRawParam(params, "client_metrics", nativeCodeClientMetrics(attempts))
 	addOptionalRawParam(params, "mcc", fields["mcc"])
 	addOptionalRawParam(params, "mnc", fields["mnc"])
 	addOptionalRawParam(params, "sim_mcc", fields["sim_mcc"])
@@ -266,7 +267,7 @@ func codeDeviceMap(method string, state nativeState) map[string]string {
 	fields := nativeDeviceMapFields(state)
 	out := map[string]string{
 		"reason":                     "",
-		"client_metrics":             nativeCodeClientMetrics(),
+		"client_metrics":             nativeCodeClientMetrics(nativeCodeRequestAttempts(state)),
 		"education_screen_displayed": "false",
 		"prefer_sms_over_flash":      nativePreferSMSOverFlash(method, fields),
 		"network_radio_type":         fields["network_radio_type"],
@@ -368,8 +369,58 @@ func nativeDefaultDeviceMapFields() map[string]string {
 	}
 }
 
-func nativeCodeClientMetrics() string {
-	return `{"attempts":1,"app_campaign_download_source":"google-play|unknown"}`
+func nativeCodeRequestAttempts(state nativeState) int {
+	if state.GenerateCodeAttempts > 0 {
+		return state.GenerateCodeAttempts
+	}
+	return nativeCodeClientMetricAttempts(nativeCodeRequestAttemptsFromLastParams(state.LastCodeParams))
+}
+
+func (s *nativeState) nextGenerateCodeAttempt() int {
+	previous := s.GenerateCodeAttempts
+	if previous < 1 {
+		previous = nativeCodeRequestAttemptsFromLastParams(s.LastCodeParams)
+	}
+	if previous < 0 {
+		previous = 0
+	}
+	s.GenerateCodeAttempts = previous + 1
+	return s.GenerateCodeAttempts
+}
+
+func nativeCodeRequestAttemptsFromLastParams(params map[string]string) int {
+	metrics := strings.TrimSpace(params["client_metrics"])
+	if metrics == "" {
+		return 0
+	}
+	var payload struct {
+		Attempts int `json:"attempts"`
+	}
+	if err := json.Unmarshal([]byte(metrics), &payload); err != nil {
+		return 0
+	}
+	return payload.Attempts
+}
+
+func nativeCodeClientMetricAttempts(attempts int) int {
+	if attempts < 1 {
+		return 1
+	}
+	return attempts
+}
+
+func nativeCodeClientMetrics(attempts int) string {
+	body, err := json.Marshal(struct {
+		Attempts                  int    `json:"attempts"`
+		AppCampaignDownloadSource string `json:"app_campaign_download_source"`
+	}{
+		Attempts:                  nativeCodeClientMetricAttempts(attempts),
+		AppCampaignDownloadSource: "google-play|unknown",
+	})
+	if err != nil {
+		return `{"attempts":1,"app_campaign_download_source":"google-play|unknown"}`
+	}
+	return string(body)
 }
 
 func nativeRegisterClientMetrics(method string) string {

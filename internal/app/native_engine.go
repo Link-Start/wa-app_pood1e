@@ -141,6 +141,7 @@ func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, inp
 	if err := ensureNativeSoftwareAttestation(&state); err != nil {
 		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
 	}
+	state.nextGenerateCodeAttempt()
 	params, err := e.codeRequestOrderedParams(ctx, input.Phone, input.DeliveryMethod, state, input.AuthCodeContext)
 	if err != nil {
 		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state

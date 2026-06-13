@@ -23,29 +23,30 @@ const nativeStateSchema = "byte-v-forge-wa-app-native-state/v1"
 var nativeUserAgentDevicePattern = regexp.MustCompile(`(?:^|\s)Android/([^ ]+)\s+Device/([^- \t/]+)-([^/\s]+)`)
 
 type nativeState struct {
-	Schema          string                          `json:"schema"`
-	CreatedAtUnix   int64                           `json:"created_at_unix"`
-	CC              string                          `json:"cc"`
-	Phone           string                          `json:"phone"`
-	AuthKey         string                          `json:"authkey"`
-	PushName        string                          `json:"push_name,omitempty"`
-	Profile         nativePhoneProfile              `json:"profile"`
-	KeyBundle       nativeKeyBundle                 `json:"key_bundle"`
-	LastCodeParams  map[string]string               `json:"last_code_params,omitempty"`
-	LastCodeResult  map[string]any                  `json:"last_code_result,omitempty"`
-	LastRegister    map[string]any                  `json:"last_register,omitempty"`
-	AccountTransfer nativeAccountTransferState      `json:"account_transfer,omitempty"`
-	RegistrationJID string                          `json:"registration_jid,omitempty"`
-	ChatRoutingInfo string                          `json:"chat_routing_info,omitempty"`
-	ChatConnection  nativeChatConnectionState       `json:"chat_connection,omitempty"`
-	ChatStatic      nativeCurveKeyPair              `json:"chat_static"`
-	Attestation     nativeSoftwareAttestation       `json:"attestation,omitempty"`
-	Signal          nativeSignalState               `json:"signal"`
-	AppState        nativeAppState                  `json:"app_state,omitempty"`
-	ContactHints    []waContactHint                 `json:"contact_hints,omitempty"`
-	MessagePayloads map[string]nativeMessagePayload `json:"message_payloads,omitempty"`
-	MessagePlainRef map[string]string               `json:"message_plain_ref,omitempty"`
-	PrivacyTokens   map[string]nativePrivacyToken   `json:"privacy_tokens,omitempty"`
+	Schema               string                          `json:"schema"`
+	CreatedAtUnix        int64                           `json:"created_at_unix"`
+	CC                   string                          `json:"cc"`
+	Phone                string                          `json:"phone"`
+	AuthKey              string                          `json:"authkey"`
+	PushName             string                          `json:"push_name,omitempty"`
+	Profile              nativePhoneProfile              `json:"profile"`
+	KeyBundle            nativeKeyBundle                 `json:"key_bundle"`
+	GenerateCodeAttempts int                             `json:"reg_attempts_generate_code,omitempty"`
+	LastCodeParams       map[string]string               `json:"last_code_params,omitempty"`
+	LastCodeResult       map[string]any                  `json:"last_code_result,omitempty"`
+	LastRegister         map[string]any                  `json:"last_register,omitempty"`
+	AccountTransfer      nativeAccountTransferState      `json:"account_transfer,omitempty"`
+	RegistrationJID      string                          `json:"registration_jid,omitempty"`
+	ChatRoutingInfo      string                          `json:"chat_routing_info,omitempty"`
+	ChatConnection       nativeChatConnectionState       `json:"chat_connection,omitempty"`
+	ChatStatic           nativeCurveKeyPair              `json:"chat_static"`
+	Attestation          nativeSoftwareAttestation       `json:"attestation,omitempty"`
+	Signal               nativeSignalState               `json:"signal"`
+	AppState             nativeAppState                  `json:"app_state,omitempty"`
+	ContactHints         []waContactHint                 `json:"contact_hints,omitempty"`
+	MessagePayloads      map[string]nativeMessagePayload `json:"message_payloads,omitempty"`
+	MessagePlainRef      map[string]string               `json:"message_plain_ref,omitempty"`
+	PrivacyTokens        map[string]nativePrivacyToken   `json:"privacy_tokens,omitempty"`
 }
 
 type nativePhoneProfile struct {
