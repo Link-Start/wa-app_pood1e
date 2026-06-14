@@ -94,7 +94,7 @@ export function methodLabel(value: string) {
   if (normalized === 'SILENT_AUTH_TS43' || normalized === 'SILENT_AUTH_TS_43') return '静默验证 TS43';
   if (normalized === 'EMAIL' || normalized === 'EMAIL_OTP') return '邮箱';
   if (normalized === 'OAUTH_EMAIL') return 'OAuth 邮箱';
-  if (normalized === 'ACCOUNT_TRANSFER' || normalized === 'ACC_TR') return '账号迁移';
+  if (normalized === 'ACCOUNT_TRANSFER' || normalized === 'ACC_TR') return '设备转移';
   if (normalized === 'RECAPTCHA') return 'reCAPTCHA';
   if (normalized === 'TWO_FACTOR_PIN' || normalized === 'TWOFAC_PIN') return '两步验证 PIN';
   if (normalized === 'PASSWORD') return '密码';
