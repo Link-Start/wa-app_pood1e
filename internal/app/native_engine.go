@@ -354,14 +354,14 @@ func (e *NativeEngine) ReceiveMessageBatch(ctx context.Context, input EngineMess
 	}
 	client := newChatdClient(chatdConfigForState(proxyURL, state, 0))
 	now := e.clock.Now()
-	messages, payloads, update, err := client.receiveBatch(ctx, state, input, input.AppVersion, now)
+	messages, payloads, otps, update, err := client.receiveBatch(ctx, state, input, input.AppVersion, now)
 	if err != nil {
 		return EngineMessageBatchResult{Err: chatdReceiveError(err)}
 	}
 	if applyChatdReceiveState(&state, input, payloads, update) {
 		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
-	return EngineMessageBatchResult{Messages: messages, Contacts: contactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now)}
+	return EngineMessageBatchResult{Messages: messages, Contacts: contactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now), OTPMessages: otps}
 }
 
 func applyChatdReceiveState(state *nativeState, input EngineMessageInput, payloads []chatdEncPayload, update chatdSessionUpdate) bool {

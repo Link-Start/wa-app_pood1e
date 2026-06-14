@@ -50,9 +50,10 @@ export async function getWaAccounts(cursor = '') {
   return { ...response, accounts };
 }
 
-export function getWaAccountOtpMessages(waAccountId: string, cursor = '') {
-  const params = new URLSearchParams({ wa_account_id: waAccountId, limit: '20' });
-  if (cursor) params.set('cursor', cursor);
+export function getWaAccountOtpMessages(waAccountId: string, options: { cursor?: string; limit?: number; includeSensitiveValues?: boolean } = {}) {
+  const params = new URLSearchParams({ wa_account_id: waAccountId, limit: String(options.limit || 20) });
+  if (options.cursor) params.set('cursor', options.cursor);
+  if (options.includeSensitiveValues !== undefined) params.set('include_sensitive_values', String(options.includeSensitiveValues));
   return getWaResponse<ListAccountOtpMessagesResponse>(`/api/wa/account-otp-messages?${params}`);
 }
 

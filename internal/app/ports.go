@@ -293,9 +293,10 @@ type EngineTextMessageResult struct {
 }
 
 type EngineMessageBatchResult struct {
-	Messages []*waappv1.InboundMessage
-	Contacts []*waappv1.WAContact
-	Err      error
+	Messages    []*waappv1.InboundMessage
+	Contacts    []*waappv1.WAContact
+	OTPMessages []*waappv1.OtpMessage
+	Err         error
 }
 
 type EngineDecryptResult struct {
