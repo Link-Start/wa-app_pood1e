@@ -2,9 +2,7 @@ package app
 
 import (
 	"context"
-	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"strings"
@@ -28,7 +26,7 @@ type wamsysMaterialProvider interface {
 type localWamsysMaterialProvider struct{}
 
 const (
-	nativeWamsysSmallByteLength = 32
+	nativeWamsysRequestedPermissionsDigest = "1bbWr/AUr6WSwyGsmoe87yQ5RmbmTY618LJF8aRYz5k="
 )
 
 var (
@@ -66,9 +64,9 @@ func buildLocalWamsysCapture(input wamsysMaterialInput) (*waappv1.WamsysCapture,
 		{Key: "_ge", Value: []byte(`{"sv":false,"sb":false}`)},
 		{Key: "_gi", Value: []byte(gpia.DeviceCompact)},
 		{Key: "_gg", Value: []byte(gpia.CodeCompact)},
-		{Key: "_gp", Value: localWamsysBase64Bytes(deriveLocalWamsysBytes(input, "_gp", nativeWamsysSmallByteLength))},
+		{Key: "_gp", Value: []byte(nativeWamsysRequestedPermissionsDigest)},
 		{Key: "_ga", Value: ga},
-		{Key: "aid", Value: localWamsysBase64Bytes(deriveLocalWamsysBytes(input, "aid", nativeWamsysSmallByteLength))},
+		{Key: "aid", Value: nativeWamsysAndroidIDDigest(input)},
 	}}, nil
 }
 
@@ -114,34 +112,25 @@ func nativeRuntimeJitterDuration(minSeconds int64, maxSeconds int64) time.Durati
 	return time.Duration(minSeconds+int64(value%span)) * time.Second
 }
 
-func localWamsysBase64Bytes(value []byte) []byte {
-	return []byte(base64.StdEncoding.EncodeToString(value))
+func nativeWamsysAndroidIDDigest(input wamsysMaterialInput) []byte {
+	return []byte(nativeGPIASHA256Base64([]byte(nativeWamsysAndroidID(input))))
 }
 
-func deriveLocalWamsysBytes(input wamsysMaterialInput, label string, length int) []byte {
+func nativeWamsysAndroidID(input wamsysMaterialInput) string {
+	profile := normalizeNativePhoneProfile(input.State.Profile, "")
 	seed := strings.Join([]string{
-		"byte-v-forge-wa-wamsys-precision/v1",
-		label,
+		"byte-v-forge-wa-android-id/v1",
 		phoneCC(input.Phone),
 		phoneNational(input.Phone),
 		input.State.Profile.PhoneSHA256,
-		input.State.Profile.FDID,
-		input.State.Profile.ExpIDUUID,
+		profile.FDID,
+		profile.ExpIDUUID,
 		input.State.Profile.AccessSessionIDUUID,
-		input.State.Profile.IDHex,
-		input.State.Profile.BackupTokenHex,
 		input.State.AuthKey,
 		input.State.KeyBundle.IdentityPublic,
 	}, "|")
-	key := sha256.Sum256([]byte(seed))
-	out := make([]byte, 0, length)
-	for counter := uint32(0); len(out) < length; counter++ {
-		mac := hmac.New(sha256.New, key[:])
-		_, _ = mac.Write([]byte(label))
-		_, _ = mac.Write(binary.BigEndian.AppendUint32(nil, counter))
-		out = append(out, mac.Sum(nil)...)
-	}
-	return out[:length]
+	sum := sha256.Sum256([]byte(seed))
+	return fmt.Sprintf("%016x", binary.BigEndian.Uint64(sum[:8]))
 }
 
 func (e *NativeEngine) applyRuntimeWamsys(
