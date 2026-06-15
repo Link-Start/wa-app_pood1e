@@ -16,7 +16,7 @@ const (
 	nativeGPIAErrorCode       = -2
 	nativeGPIAPackageName     = "com.whatsapp"
 	nativeGPIASourceSize      = "141711087"
-	nativeGPIASourceDigest    = "b3BumN//vPO0GypN5i+xXvNznZyGiXOT99Jip70omCg="
+	nativeGPIASourceDigest    = "vJrNuYDSuWUZ87O1W5+xs/2g74mwPA2JO+dkqjlJZG4="
 	nativeGPIACertDigest      = "OKD31QX+GP7GT780Psqq8xDb15k="
 	nativeGPIAClassesDigest   = "qoblldcHz4lA84Sgs1QLZWPpd6YKG25zf0GwJZdTHXk="
 	nativeGPIANativeLibDigest = "G9McgxRaSjtq92o7zx0fbf3Ak7+SPmxxNyvNXS01hlM="
@@ -167,7 +167,7 @@ func renderNativeGPIAJSONObject(fields []nativeGPIAJSONField) ([]byte, error) {
 func renderNativeGPIAJSONValue(value any) ([]byte, error) {
 	switch v := value.(type) {
 	case string:
-		return json.Marshal(v)
+		return renderNativeGPIAJSONString(v)
 	case int:
 		return []byte(strconv.Itoa(v)), nil
 	case int64:
@@ -179,4 +179,12 @@ func renderNativeGPIAJSONValue(value any) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported native GPIA JSON value type %T", value)
 	}
+}
+
+func renderNativeGPIAJSONString(value string) ([]byte, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(strings.ReplaceAll(string(encoded), `/`, `\/`)), nil
 }
