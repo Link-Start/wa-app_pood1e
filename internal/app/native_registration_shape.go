@@ -25,6 +25,7 @@ func logNativeRegistrationOrderedShape(kind string, phone *waappv1.PhoneTarget, 
 		len(params),
 		registrationShapeFields(params),
 	)
+	logNativeRegistrationValueHashes(kind, phoneHash, method, params)
 }
 
 func logNativeRegistrationMapShape(kind string, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, params map[string]string, rawKeys map[string]struct{}) {
@@ -60,4 +61,56 @@ func registrationShapeValueLength(value string, raw bool) int {
 		return len([]byte(value))
 	}
 	return len([]byte(decoded))
+}
+
+func logNativeRegistrationValueHashes(kind string, phoneHash string, method waappv1.VerificationDeliveryMethod, params orderedParams) {
+	values := registrationValueHashes(params)
+	if values == "" {
+		return
+	}
+	log.Printf(
+		"wa_registration_value_hashes kind=%s phone_hash=%s method=%s values=%s",
+		probeLogValue(kind),
+		phoneHash,
+		probeLogValue(registrationMethodName(method, "sms")),
+		values,
+	)
+}
+
+func registrationValueHashes(params orderedParams) string {
+	parts := make([]string, 0, len(params))
+	for _, param := range params {
+		if !shouldLogRegistrationValueHash(param.key) {
+			continue
+		}
+		value := registrationHashValue(param.val, param.raw)
+		parts = append(parts, param.key+":"+strconv.Itoa(len([]byte(value)))+":"+stableID(value))
+	}
+	return strings.Join(parts, ",")
+}
+
+func registrationHashValue(value string, raw bool) string {
+	if !raw {
+		return value
+	}
+	decoded, err := url.PathUnescape(value)
+	if err != nil {
+		return value
+	}
+	return decoded
+}
+
+func shouldLogRegistrationValueHash(key string) bool {
+	switch key {
+	case "fdid", "expid", "access_session_id", "id", "backup_token", "token",
+		"authkey", "e_ident", "e_keytype", "e_regid", "e_skey_id", "e_skey_val", "e_skey_sig",
+		"mistyped", "reason", "hasav", "client_metrics", "mcc", "mnc", "sim_mcc", "sim_mnc",
+		"education_screen_displayed", "prefer_sms_over_flash", "network_radio_type", "simnum",
+		"hasinrc", "pid", "rc", "sim_type", "airplane_mode_type", "cellular_strength",
+		"roaming_type", "device_ram", "db", "recaptcha", "feo2_query_status",
+		"ab_hash", "gpia", "_ge", "_gi", "_gg", "_gp", "_ga", "_hp", "aid":
+		return true
+	default:
+		return false
+	}
 }
