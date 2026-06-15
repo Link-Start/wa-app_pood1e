@@ -124,7 +124,15 @@ func applyNativeE2EParams(params *orderedParams, state nativeState) {
 func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]string, method string, attempts int) {
 	if method == "sms" {
 		addOptionalRawParam(params, "mistyped", fields["mistyped"])
+		addRawParam(params, "reason", "")
+		addOptionalRawParam(params, "hasav", fields["hasav"])
 		addRawParam(params, "client_metrics", nativeCodeClientMetrics(attempts))
+		addOptionalRawParam(params, "mcc", fields["mcc"])
+		addOptionalRawParam(params, "mnc", fields["mnc"])
+		addOptionalRawParam(params, "sim_mcc", fields["sim_mcc"])
+		addOptionalRawParam(params, "sim_mnc", fields["sim_mnc"])
+		addRawParam(params, "education_screen_displayed", "false")
+		addRawParam(params, "prefer_sms_over_flash", nativePreferSMSOverFlash(method, fields))
 		applyNativeCodeRequestRuntimeParams(params, fields, method)
 		addOptionalRawParam(params, "device_ram", fields["device_ram"])
 		return
