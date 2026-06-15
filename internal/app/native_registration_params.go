@@ -78,9 +78,6 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 			params.set("context", contextValue, false)
 		}
 	}
-	if advertisingID := nativeAdvertisingID(state); advertisingID != "" && shouldSendNativeAdvertisingID(phone) && nativeRegistrationMethodUsesAdvertisingID(methodName) {
-		params.set("advertising_id", advertisingID, false)
-	}
 	applyNativeE2EParams(&params, state)
 	applyNativeCodeRequestMapParams(&params, fields, methodName, attempts)
 	var capture *waappv1.WamsysCapture

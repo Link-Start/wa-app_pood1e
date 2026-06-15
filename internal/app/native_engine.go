@@ -713,9 +713,6 @@ func (e *NativeEngine) codeParams(phone *waappv1.PhoneTarget, method waappv1.Ver
 			params["context"] = contextValue
 		}
 	}
-	if advertisingID := nativeAdvertisingID(state); advertisingID != "" && shouldSendNativeAdvertisingID(phone) && nativeRegistrationMethodUsesAdvertisingID(methodName) {
-		params["advertising_id"] = advertisingID
-	}
 	raw := map[string]struct{}{"id": {}, "backup_token": {}}
 	applyNativeRawParamMap(params, raw, codeDeviceMap(methodName, state), true)
 	return params, raw
