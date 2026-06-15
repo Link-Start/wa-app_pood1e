@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	nativeGPIAErrorCode       = -2
+	nativeGPIAErrorCode       = -9
 	nativeGPIAPackageName     = "com.whatsapp"
 	nativeGPIASourceSize      = "141711087"
 	nativeGPIASourceDigest    = "vJrNuYDSuWUZ87O1W5+xs/2g74mwPA2JO+dkqjlJZG4="

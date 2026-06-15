@@ -334,7 +334,7 @@ func nativeDeviceMapFields(state nativeState) map[string]string {
 	for key, value := range nativeRuntimeDeviceMapFields() {
 		fields[key] = value
 	}
-	if fields["feo2_query_status"] == legacyNativeFeo2QueryStatus {
+	if fields["feo2_query_status"] == staleNativeFeo2QueryStatus {
 		fields["feo2_query_status"] = nativeDefaultFeo2QueryStatus
 	}
 	return fields
@@ -364,8 +364,8 @@ func newNativeRuntimeProcessID() string {
 }
 
 const (
-	nativeDefaultFeo2QueryStatus   = "did_not_query"
-	legacyNativeFeo2QueryStatus    = "error_security_exception"
+	nativeDefaultFeo2QueryStatus   = "error_security_exception"
+	staleNativeFeo2QueryStatus     = "did_not_query"
 	nativeDefaultDebugBridgeStatus = "0"
 )
 
