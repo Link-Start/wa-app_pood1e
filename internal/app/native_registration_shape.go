@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"log"
 	"net/url"
 	"strconv"
@@ -26,6 +27,7 @@ func logNativeRegistrationOrderedShape(kind string, phone *waappv1.PhoneTarget, 
 		registrationShapeFields(params),
 	)
 	logNativeRegistrationValueHashes(kind, phoneHash, method, params)
+	logNativeRegistrationWamsysGAShape(kind, phoneHash, method, params)
 }
 
 func logNativeRegistrationMapShape(kind string, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, params map[string]string, rawKeys map[string]struct{}) {
@@ -112,5 +114,49 @@ func shouldLogRegistrationValueHash(key string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func logNativeRegistrationWamsysGAShape(kind string, phoneHash string, method waappv1.VerificationDeliveryMethod, params orderedParams) {
+	for _, param := range params {
+		if param.key != "_ga" {
+			continue
+		}
+		value := registrationHashValue(param.val, param.raw)
+		var shape struct {
+			BootID          string `json:"bi"`
+			SourcePathAge   int64  `json:"ap"`
+			DataPathAge     int64  `json:"ai"`
+			ExternalPathAge int64  `json:"ae"`
+			MultiProcess    bool   `json:"mp"`
+			MultiUser       bool   `json:"mu"`
+		}
+		if err := json.Unmarshal([]byte(value), &shape); err != nil {
+			log.Printf(
+				"wa_registration_wamsys_ga_shape kind=%s phone_hash=%s method=%s len=%d hash=%s parse_error=%s",
+				probeLogValue(kind),
+				phoneHash,
+				probeLogValue(registrationMethodName(method, "sms")),
+				len([]byte(value)),
+				stableID(value),
+				probeLogValue(err.Error()),
+			)
+			return
+		}
+		log.Printf(
+			"wa_registration_wamsys_ga_shape kind=%s phone_hash=%s method=%s len=%d hash=%s bi_len=%d ap=%d ai=%d ae=%d mp=%t mu=%t",
+			probeLogValue(kind),
+			phoneHash,
+			probeLogValue(registrationMethodName(method, "sms")),
+			len([]byte(value)),
+			stableID(value),
+			len([]byte(shape.BootID)),
+			shape.SourcePathAge,
+			shape.DataPathAge,
+			shape.ExternalPathAge,
+			shape.MultiProcess,
+			shape.MultiUser,
+		)
+		return
 	}
 }
