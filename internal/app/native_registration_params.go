@@ -85,7 +85,7 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 		}
 	}
 	applyNativeE2EParams(&params, state)
-	applyNativeCodeRequestMapParams(&params, fields, methodName, attempts)
+	applyNativeCodeRequestMapParams(&params, fields, attempts)
 	var capture *waappv1.WamsysCapture
 	if includeWamsys {
 		var err error
@@ -126,32 +126,9 @@ func applyNativeE2EParams(params *orderedParams, state nativeState) {
 	params.set("e_skey_sig", state.KeyBundle.SignedKeySig, false)
 }
 
-func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]string, method string, attempts int) {
-	if method == "sms" {
-		addOptionalRawParam(params, "mistyped", fields["mistyped"])
-		addRawParam(params, "reason", "")
-		addOptionalRawParam(params, "hasav", fields["hasav"])
-		addRawParam(params, "client_metrics", nativeCodeClientMetrics(attempts))
-		addOptionalRawParam(params, "mcc", fields["mcc"])
-		addOptionalRawParam(params, "mnc", fields["mnc"])
-		addOptionalRawParam(params, "sim_mcc", fields["sim_mcc"])
-		addOptionalRawParam(params, "sim_mnc", fields["sim_mnc"])
-		addRawParam(params, "education_screen_displayed", "false")
-		addRawParam(params, "prefer_sms_over_flash", nativePreferSMSOverFlash(method, fields))
-		applyNativeCodeRequestRuntimeParams(params, fields, method)
-		addOptionalRawParam(params, "device_ram", fields["device_ram"])
-		return
-	}
+func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]string, attempts int) {
 	addOptionalRawParam(params, "mistyped", fields["mistyped"])
-	addRawParam(params, "reason", "")
-	addOptionalRawParam(params, "hasav", fields["hasav"])
 	addRawParam(params, "client_metrics", nativeCodeClientMetrics(attempts))
-	addOptionalRawParam(params, "mcc", fields["mcc"])
-	addOptionalRawParam(params, "mnc", fields["mnc"])
-	addOptionalRawParam(params, "sim_mcc", fields["sim_mcc"])
-	addOptionalRawParam(params, "sim_mnc", fields["sim_mnc"])
-	addRawParam(params, "education_screen_displayed", "false")
-	addRawParam(params, "prefer_sms_over_flash", nativePreferSMSOverFlash(method, fields))
 	addOptionalRawParam(params, "network_radio_type", fields["network_radio_type"])
 	addOptionalRawParam(params, "simnum", fields["simnum"])
 	addOptionalRawParam(params, "hasinrc", fields["hasinrc"])
@@ -162,21 +139,6 @@ func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]st
 	addOptionalRawParam(params, "cellular_strength", fields["cellular_strength"])
 	addOptionalRawParam(params, "roaming_type", fields["roaming_type"])
 	addOptionalRawParam(params, "device_ram", fields["device_ram"])
-}
-
-func applyNativeCodeRequestRuntimeParams(params *orderedParams, fields map[string]string, method string) {
-	if method != "sms" {
-		return
-	}
-	addOptionalRawParam(params, "network_radio_type", fields["network_radio_type"])
-	addOptionalRawParam(params, "simnum", fields["simnum"])
-	addOptionalRawParam(params, "hasinrc", fields["hasinrc"])
-	addOptionalRawParam(params, "pid", fields["pid"])
-	addOptionalRawParam(params, "rc", fields["rc"])
-	addOptionalRawParam(params, "sim_type", fields["sim_type"])
-	addOptionalRawParam(params, "airplane_mode_type", fields["airplane_mode_type"])
-	addOptionalRawParam(params, "cellular_strength", fields["cellular_strength"])
-	addOptionalRawParam(params, "roaming_type", fields["roaming_type"])
 }
 
 func addOptionalRawParam(params *orderedParams, key string, value string) {
