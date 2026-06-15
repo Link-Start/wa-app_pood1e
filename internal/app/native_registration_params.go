@@ -68,10 +68,8 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	}
 	params.set("id", state.Profile.ID, true)
 	params.set("backup_token", state.Profile.BackupToken, true)
-	if nativeRegistrationMethodUsesToken(methodName) {
-		if token := e.registrationToken(phone, state); token != "" {
-			params.set("token", token, false)
-		}
+	if token := e.registrationToken(phone, state); token != "" {
+		params.set("token", token, false)
 	}
 	params.set("method", methodName, false)
 	if nativeRegistrationMethodUsesAuthContext(methodName) {
@@ -101,7 +99,7 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 }
 
 func nativeRegistrationMethodUsesToken(methodName string) bool {
-	return methodName != "acc_tr"
+	return true
 }
 
 func nativeRegistrationMethodUsesAuthContext(methodName string) bool {
