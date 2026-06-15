@@ -74,9 +74,7 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	}
 	params.set("method", methodName, false)
 	if nativeRegistrationMethodUsesAuthContext(methodName) {
-		if contextValue := strings.TrimSpace(authCodeContext); contextValue != "" {
-			params.set("context", contextValue, false)
-		}
+		params.set("context", strings.TrimSpace(authCodeContext), false)
 	}
 	if advertisingID := nativeAdvertisingID(state); advertisingID != "" && shouldSendNativeAdvertisingID(phone) && nativeRegistrationMethodUsesAdvertisingID(methodName) {
 		params.set("advertising_id", advertisingID, false)
