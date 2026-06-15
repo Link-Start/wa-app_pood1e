@@ -125,19 +125,14 @@ func maxInt64(left int64, right int64) int64 {
 }
 
 func nativeWamsysBootID(input wamsysMaterialInput) string {
-	profile := normalizeNativePhoneProfile(input.State.Profile, "")
-	seed := strings.Join([]string{
-		"byte-v-forge-wa-boot-id/v1",
-		phoneCC(input.Phone),
-		phoneNational(input.Phone),
-		input.State.Profile.PhoneSHA256,
-		profile.FDID,
-		profile.ExpIDUUID,
-		input.State.Profile.AccessSessionIDUUID,
-		input.State.AuthKey,
-		input.State.KeyBundle.IdentityPublic,
-	}, "|")
-	sum := sha256.Sum256([]byte(seed))
+	_ = input
+	return nativeRuntimeBootID
+}
+
+var nativeRuntimeBootID = newNativeRuntimeBootID()
+
+func newNativeRuntimeBootID() string {
+	sum := randomBytes(16)
 	id := append([]byte(nil), sum[:16]...)
 	id[6] = (id[6] & 0x0f) | 0x40
 	id[8] = (id[8] & 0x3f) | 0x80
