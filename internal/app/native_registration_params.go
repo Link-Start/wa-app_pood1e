@@ -72,7 +72,9 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	if token := e.registrationToken(phone, state); token != "" {
 		params.set("token", token, false)
 	}
-	params.set("method", methodName, false)
+	if nativeRegistrationMethodUsesExplicitCodeMethod(methodName) {
+		params.set("method", methodName, false)
+	}
 	if nativeRegistrationMethodUsesAuthContext(methodName) {
 		if contextValue := strings.TrimSpace(authCodeContext); contextValue != "" {
 			params.set("context", contextValue, false)
@@ -93,9 +95,16 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	}
 	addOptionalRawParam(&params, "db", fields["db"])
 	addOptionalRawParam(&params, "recaptcha", fields["recaptcha"])
+	applyNativeCodeRequestRuntimeParams(&params, fields, methodName)
 	applyOrderedWamsysExcept(&params, capture, map[string]struct{}{"gpia": {}})
-	addOptionalRawParam(&params, "feo2_query_status", fields["feo2_query_status"])
+	if methodName != "sms" {
+		addOptionalRawParam(&params, "feo2_query_status", fields["feo2_query_status"])
+	}
 	return params, nil
+}
+
+func nativeRegistrationMethodUsesExplicitCodeMethod(methodName string) bool {
+	return methodName != "sms"
 }
 
 func nativeRegistrationMethodUsesToken(methodName string) bool {
@@ -121,6 +130,13 @@ func applyNativeE2EParams(params *orderedParams, state nativeState) {
 }
 
 func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]string, method string, attempts int) {
+	if method == "sms" {
+		addOptionalRawParam(params, "mistyped", fields["mistyped"])
+		addRawParam(params, "client_metrics", nativeCodeClientMetrics(attempts))
+		addOptionalRawParam(params, "device_ram", fields["device_ram"])
+		addOptionalRawParam(params, "feo2_query_status", fields["feo2_query_status"])
+		return
+	}
 	addOptionalRawParam(params, "mistyped", fields["mistyped"])
 	addRawParam(params, "reason", "")
 	addOptionalRawParam(params, "hasav", fields["hasav"])
@@ -141,6 +157,21 @@ func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]st
 	addOptionalRawParam(params, "cellular_strength", fields["cellular_strength"])
 	addOptionalRawParam(params, "roaming_type", fields["roaming_type"])
 	addOptionalRawParam(params, "device_ram", fields["device_ram"])
+}
+
+func applyNativeCodeRequestRuntimeParams(params *orderedParams, fields map[string]string, method string) {
+	if method != "sms" {
+		return
+	}
+	addOptionalRawParam(params, "network_radio_type", fields["network_radio_type"])
+	addOptionalRawParam(params, "simnum", fields["simnum"])
+	addOptionalRawParam(params, "hasinrc", fields["hasinrc"])
+	addOptionalRawParam(params, "pid", fields["pid"])
+	addOptionalRawParam(params, "rc", fields["rc"])
+	addOptionalRawParam(params, "sim_type", fields["sim_type"])
+	addOptionalRawParam(params, "airplane_mode_type", fields["airplane_mode_type"])
+	addOptionalRawParam(params, "cellular_strength", fields["cellular_strength"])
+	addOptionalRawParam(params, "roaming_type", fields["roaming_type"])
 }
 
 func addOptionalRawParam(params *orderedParams, key string, value string) {
