@@ -481,8 +481,6 @@ const defaultRegistrationTokenMessagePrefixHex = "" +
 	"063500a8e547349282d15981cdb58a08bede51dd7e9867295b3dfb45ffc6b259300b06072a8648ce3804030500032f00302c021400a602a7" +
 	"477acf841077237be090df436582ca2f0214350ce0268d07e71e55774ab4eacd4d071cd1efad228ddd386803c6f2480473cded35085d"
 
-const defaultRegistrationTokenClassesMD5Hex = "a2cffe3939f50d9df490f44e010f5563"
-
 func deriveDefaultRegistrationToken(phone string) string {
 	key, err := hex.DecodeString(defaultRegistrationTokenHMACKeyHex)
 	if err != nil {
@@ -492,13 +490,8 @@ func deriveDefaultRegistrationToken(phone string) string {
 	if err != nil {
 		return ""
 	}
-	classesMD5, err := hex.DecodeString(defaultRegistrationTokenClassesMD5Hex)
-	if err != nil {
-		return ""
-	}
 	mac := hmac.New(sha1.New, key)
 	_, _ = mac.Write(prefix)
-	_, _ = mac.Write(classesMD5)
 	_, _ = mac.Write([]byte(phone))
 	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
 }
