@@ -388,7 +388,7 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 	op := ops[rng.Intn(len(ops))]
 	simOp := ops[rng.Intn(len(ops))]
 	expIDUUID, expID := uuidPair()
-	accessUUID, accessSessionID := uuidPair()
+	accessUUID, _ := uuidPair()
 	id := randomBytes(20)
 	backup := randomBytes(20)
 	phoneHash := sha256.Sum256([]byte(fullPhoneKey(phoneCC(phone), phoneNational(phone))))
@@ -428,7 +428,7 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 		FDID:                newUUIDString(),
 		ExpID:               expID,
 		ExpIDUUID:           expIDUUID,
-		AccessSessionID:     accessSessionID,
+		AccessSessionID:     accessUUID,
 		AccessSessionIDUUID: accessUUID,
 		ID:                  pctBytes(id),
 		IDHex:               hex.EncodeToString(id),
@@ -638,6 +638,9 @@ func normalizeNativePhoneProfile(profile nativePhoneProfile, userAgent string) n
 		Model:   profile.DeviceModel,
 		Android: profile.AndroidVersion,
 	}), device.BuildDisplayID)
+	if shouldNormalizeNativeAccessSessionID(profile) {
+		profile = normalizeNativeAccessSessionID(profile)
+	}
 	if len(profile.AdditionalMapFields) > 0 {
 		fields := make(map[string]string, len(profile.AdditionalMapFields))
 		for key, value := range profile.AdditionalMapFields {
@@ -649,6 +652,48 @@ func normalizeNativePhoneProfile(profile nativePhoneProfile, userAgent string) n
 		profile.AdditionalMapFields = fields
 	}
 	return profile
+}
+
+func shouldNormalizeNativeAccessSessionID(profile nativePhoneProfile) bool {
+	return profile.AccessSessionID != "" ||
+		profile.AccessSessionIDUUID != "" ||
+		profile.FDID != "" ||
+		profile.PhoneSHA256 != ""
+}
+
+func normalizeNativeAccessSessionID(profile nativePhoneProfile) nativePhoneProfile {
+	if isUUIDText(profile.AccessSessionID) {
+		profile.AccessSessionIDUUID = firstNonEmpty(profile.AccessSessionIDUUID, profile.AccessSessionID)
+		return profile
+	}
+	if isUUIDText(profile.AccessSessionIDUUID) {
+		profile.AccessSessionID = profile.AccessSessionIDUUID
+		return profile
+	}
+	accessSessionID := newUUIDString()
+	profile.AccessSessionID = accessSessionID
+	profile.AccessSessionIDUUID = accessSessionID
+	return profile
+}
+
+func isUUIDText(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) != 36 {
+		return false
+	}
+	for idx, ch := range value {
+		switch idx {
+		case 8, 13, 18, 23:
+			if ch != '-' {
+				return false
+			}
+		default:
+			if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') && (ch < 'A' || ch > 'F') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func nativeDeviceModelFromUserAgent(userAgent string) (nativeDeviceModel, bool) {

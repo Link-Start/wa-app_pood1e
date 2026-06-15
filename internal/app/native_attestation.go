@@ -40,8 +40,10 @@ const (
 		nativeAttestationFirstIntermediateDER +
 		nativeAttestationSecondIntermediateDER +
 		nativeAttestationLeafDERLength
-	nativeAttestationFreshness  = 5 * time.Minute
-	nativeAttestationFutureSkew = 2 * time.Minute
+	nativeAttestationFreshness             = 5 * time.Minute
+	nativeAttestationFutureSkew            = 2 * time.Minute
+	nativeAttestationSignatureRawURLLength = 96
+	nativeAttestationSignatureMaxAttempts  = 64
 )
 
 func buildWASafeEnvelope(plain []byte, serverPublicKeyHex string, attestation nativeSoftwareAttestation) (waSafeEnvelope, error) {
@@ -387,13 +389,13 @@ func (a nativeSoftwareAttestation) sign(body []byte) (string, string, error) {
 	}
 	digest := sha256.Sum256(body)
 	var signature []byte
-	for attempt := 0; attempt < 8; attempt++ {
+	for attempt := 0; attempt < nativeAttestationSignatureMaxAttempts; attempt++ {
 		candidate, err := ecdsa.SignASN1(rand.Reader, privateKey, digest[:])
 		if err != nil {
 			return "", "", err
 		}
 		signature = candidate
-		if len(base64.RawURLEncoding.EncodeToString(candidate)) == 96 {
+		if len(base64.RawURLEncoding.EncodeToString(candidate)) == nativeAttestationSignatureRawURLLength {
 			break
 		}
 	}

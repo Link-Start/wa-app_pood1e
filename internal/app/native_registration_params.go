@@ -5,9 +5,9 @@ import (
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -339,7 +339,7 @@ func nativeDeviceMapFields(state nativeState) map[string]string {
 
 func nativeRuntimeDeviceMapFields() map[string]string {
 	return map[string]string{
-		"pid": strconv.Itoa(os.Getpid()),
+		"pid": nativeRuntimeProcessID,
 	}
 }
 
@@ -350,6 +350,14 @@ func isRuntimeNativeDeviceMapKey(key string) bool {
 	default:
 		return false
 	}
+}
+
+var nativeRuntimeProcessID = newNativeRuntimeProcessID()
+
+func newNativeRuntimeProcessID() string {
+	raw := randomBytes(4)
+	value := binary.BigEndian.Uint32(raw)
+	return strconv.Itoa(10000 + int(value%50000))
 }
 
 const (
