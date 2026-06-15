@@ -431,12 +431,14 @@ func nativeCodeClientMetrics(attempts int) string {
 	body, err := json.Marshal(struct {
 		Attempts                  int    `json:"attempts"`
 		AppCampaignDownloadSource string `json:"app_campaign_download_source"`
+		WasActivatedFromStub      bool   `json:"was_activated_from_stub"`
 	}{
 		Attempts:                  nativeCodeClientMetricAttempts(attempts),
 		AppCampaignDownloadSource: nativeDefaultAppCampaignDownloadSource,
+		WasActivatedFromStub:      false,
 	})
 	if err != nil {
-		return `{"attempts":1,"app_campaign_download_source":"unknown|unknown"}`
+		return `{"attempts":1,"app_campaign_download_source":"unknown|unknown","was_activated_from_stub":false}`
 	}
 	return string(body)
 }
