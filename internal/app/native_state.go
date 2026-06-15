@@ -383,7 +383,7 @@ func nativeRandomRadioType(rng *mrand.Rand) string {
 func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 	seed := int64(binary.BigEndian.Uint64(randomBytes(8)))
 	rng := mrand.New(mrand.NewSource(seed))
-	model := nativeDeviceModels[rng.Intn(len(nativeDeviceModels))]
+	model := defaultNativeDeviceModel()
 	country := nativeProfileCountry(phone)
 	ops := nativeOperators[country]
 	if len(ops) == 0 {
