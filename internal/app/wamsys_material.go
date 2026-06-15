@@ -28,11 +28,15 @@ type localWamsysMaterialProvider struct{}
 
 const (
 	nativeWamsysRequestedPermissionsDigest = "NNj5BoWX+yvZBYEY46Ze+Ad6Ykk0Z27FjgSysvkzzCU="
-	nativeWamsysInstallAgeMinSeconds       = int64(21600)
-	nativeWamsysInstallAgeSpreadSeconds    = uint64(2048)
-	nativeWamsysDataAgeDeltaMinSeconds     = int64(5600)
-	nativeWamsysDataAgeDeltaSpreadSeconds  = uint64(768)
-	nativeWamsysPathAgeJitterSeconds       = uint64(512)
+	// Native WAMSYS records path ages as time-now minus source/data/external
+	// filesystem mtimes. Keep the virtual mtimes tied to the profile lifecycle,
+	// not to the long-lived service process.
+	nativeWamsysSourceAgeBaseSeconds          = int64(96)
+	nativeWamsysSourceAgeSpreadSeconds        = uint64(128)
+	nativeWamsysDataAgeDeltaBaseSeconds       = int64(19000)
+	nativeWamsysDataAgeDeltaSpreadSeconds     = uint64(2048)
+	nativeWamsysExternalAgeDeltaBaseSeconds   = int64(24700)
+	nativeWamsysExternalAgeDeltaSpreadSeconds = uint64(2048)
 )
 
 func (localWamsysMaterialProvider) RegistrationMaterial(ctx context.Context, input wamsysMaterialInput) (*waappv1.WamsysCapture, error) {
@@ -85,51 +89,47 @@ func buildLocalWamsysGA(input wamsysMaterialInput) ([]byte, error) {
 }
 
 func nativeWamsysPathAgeSeconds(input wamsysMaterialInput, label string) int64 {
-	installAge := nativeWamsysVirtualInstallAgeSeconds(input)
+	now := nativeWamsysNow(input).Unix()
+	sourceUnix := nativeWamsysVirtualSourceUnix(input)
 	switch label {
 	case "source-dir":
-		return installAge + nativeWamsysRuntimePathAges.SourceJitterSeconds
+		return maxInt64(0, now-sourceUnix)
 	case "data-dir":
-		return maxInt64(1024, installAge-nativeWamsysRuntimePathAges.DataDeltaSeconds)
+		dataUnix := sourceUnix - nativeWamsysStableOffset(input, "data-dir", nativeWamsysDataAgeDeltaBaseSeconds, nativeWamsysDataAgeDeltaSpreadSeconds)
+		return maxInt64(0, now-dataUnix)
 	case "external-files-dir":
-		return maxInt64(1024, installAge-nativeWamsysRuntimePathAges.ExternalJitterSeconds)
+		externalUnix := sourceUnix - nativeWamsysStableOffset(input, "external-files-dir", nativeWamsysExternalAgeDeltaBaseSeconds, nativeWamsysExternalAgeDeltaSpreadSeconds)
+		return maxInt64(0, now-externalUnix)
 	default:
-		return installAge
+		return maxInt64(0, now-sourceUnix)
 	}
 }
 
-func nativeWamsysVirtualInstallAgeSeconds(input wamsysMaterialInput) int64 {
-	age := nativeWamsysNow(input).Unix() - nativeWamsysRuntimeInstallUnix
-	return maxInt64(nativeWamsysInstallAgeMinSeconds, age)
-}
-
-type nativeWamsysRuntimePathAgeOffsets struct {
-	SourceJitterSeconds   int64
-	DataDeltaSeconds      int64
-	ExternalJitterSeconds int64
-}
-
-var nativeWamsysRuntimeInstallUnix = newNativeWamsysRuntimeInstallUnix()
-var nativeWamsysRuntimePathAges = newNativeWamsysRuntimePathAgeOffsets()
-
-func newNativeWamsysRuntimeInstallUnix() int64 {
-	return time.Now().UTC().Unix() - nativeWamsysInstallAgeMinSeconds - nativeWamsysRandomJitterSeconds(nativeWamsysInstallAgeSpreadSeconds)
-}
-
-func newNativeWamsysRuntimePathAgeOffsets() nativeWamsysRuntimePathAgeOffsets {
-	return nativeWamsysRuntimePathAgeOffsets{
-		SourceJitterSeconds:   nativeWamsysRandomJitterSeconds(nativeWamsysPathAgeJitterSeconds),
-		DataDeltaSeconds:      nativeWamsysDataAgeDeltaMinSeconds + nativeWamsysRandomJitterSeconds(nativeWamsysDataAgeDeltaSpreadSeconds),
-		ExternalJitterSeconds: nativeWamsysRandomJitterSeconds(nativeWamsysPathAgeJitterSeconds),
+func nativeWamsysVirtualSourceUnix(input wamsysMaterialInput) int64 {
+	createdUnix := input.State.Profile.CreatedAtUnix
+	if createdUnix <= 0 {
+		createdUnix = input.State.CreatedAtUnix
 	}
+	if createdUnix <= 0 {
+		createdUnix = nativeWamsysNow(input).Unix()
+	}
+	return createdUnix - nativeWamsysStableOffset(input, "source-dir", nativeWamsysSourceAgeBaseSeconds, nativeWamsysSourceAgeSpreadSeconds)
 }
 
-func nativeWamsysRandomJitterSeconds(spread uint64) int64 {
+func nativeWamsysStableOffset(input wamsysMaterialInput, label string, base int64, spread uint64) int64 {
 	if spread == 0 {
-		return 0
+		return base
 	}
-	raw := randomBytes(8)
-	return int64(binary.BigEndian.Uint64(raw) % spread)
+	seed := strings.Join([]string{
+		"byte-v-forge-wa-wamsys-path-age/v1",
+		label,
+		input.State.Profile.PhoneSHA256,
+		input.State.Profile.FDID,
+		input.State.Profile.AccessSessionIDUUID,
+		input.State.AuthKey,
+	}, "|")
+	sum := sha256.Sum256([]byte(seed))
+	return base + int64(binary.BigEndian.Uint64(sum[:8])%spread)
 }
 
 func nativeWamsysNow(input wamsysMaterialInput) time.Time {
