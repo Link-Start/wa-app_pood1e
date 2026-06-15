@@ -334,7 +334,7 @@ type nativeDeviceModel struct {
 }
 
 var nativeDeviceModels = []nativeDeviceModel{
-	{Vendor: "OnePlus", Model: "LE2100", Android: "14", BuildDisplayID: "LE2100_14.0.0.605(CN01)", MinRAMGiB: 7.2, MaxRAMGiB: 7.8},
+	{Vendor: "OnePlus", Model: "LE2100", Android: "14", BuildDisplayID: "LE2100_14.0.0.605(CN01)", MinRAMGiB: 11.24, MaxRAMGiB: 11.24},
 	{Vendor: "HUAWEI", Model: "TRT-AL00A", Android: "7.0", BuildDisplayID: "TRT-AL00A_C00B220(CN01)", MinRAMGiB: 2.8, MaxRAMGiB: 3.9},
 	{Vendor: "Xiaomi", Model: "M2007J3SC", Android: "11", BuildDisplayID: "M2007J3SC_11.0.14(CN01)", MinRAMGiB: 5.5, MaxRAMGiB: 7.8},
 	{Vendor: "samsung", Model: "SM-G991B", Android: "13", BuildDisplayID: "SM-G991B_TP1A.014(EUX1)", MinRAMGiB: 6.8, MaxRAMGiB: 7.6},

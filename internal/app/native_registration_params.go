@@ -374,7 +374,7 @@ func nativeDefaultDeviceMapFields() map[string]string {
 		"simnum":                "0",
 		"hasinrc":               "1",
 		"rc":                    "0",
-		"device_ram":            "3.53",
+		"device_ram":            "11.24",
 		"db":                    nativeDefaultDebugBridgeStatus,
 		"recaptcha":             `{"stage":"ABPROP_DISABLED"}`,
 		"feo2_query_status":     nativeDefaultFeo2QueryStatus,
@@ -436,7 +436,7 @@ func nativeCodeClientMetrics(attempts int) string {
 		AppCampaignDownloadSource: nativeDefaultAppCampaignDownloadSource,
 	})
 	if err != nil {
-		return `{"attempts":1,"app_campaign_download_source":"google-play"}`
+		return `{"attempts":1,"app_campaign_download_source":"unknown|unknown"}`
 	}
 	return string(body)
 }
@@ -462,7 +462,7 @@ func nativeCodeEntryMethod(method string) string {
 	}
 }
 
-const nativeDefaultAppCampaignDownloadSource = "google-play"
+const nativeDefaultAppCampaignDownloadSource = "unknown|unknown"
 
 const defaultRegistrationTokenHMACKeyHex = "44539b934347b6f12609296e69145b58309df94ed0a8a5a2d94078a8eaff87013e3d95a69644aa1b924646532c279f8bcd2855ab55f2c8bc1693adb7800c88ff"
 
@@ -506,7 +506,7 @@ func existDeviceMap(state nativeState) map[string]string {
 	return map[string]string{
 		"mistyped":                        "7",
 		"offline_ab":                      `{"exposure":[],"exp_hash":[],"metrics":{}}`,
-		"client_metrics":                  `{"attempts":1,"app_campaign_download_source":"google-play","was_activated_from_stub":false}`,
+		"client_metrics":                  `{"attempts":1,"app_campaign_download_source":"unknown|unknown","was_activated_from_stub":false}`,
 		"read_phone_permission_granted":   "0",
 		"sim_state":                       "1",
 		"network_operator_name":           fields["network_operator_name"],
