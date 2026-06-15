@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -27,13 +28,7 @@ type localWamsysMaterialProvider struct{}
 
 const (
 	nativeWamsysRequestedPermissionsDigest = "1bbWr/AUr6WSwyGsmoe87yQ5RmbmTY618LJF8aRYz5k="
-)
-
-var (
-	nativeWamsysRuntimeStartedAt      = time.Now().UTC()
-	nativeWamsysRuntimeBootID         = newUUIDString()
-	nativeWamsysRuntimeDataDirMTime   = nativeWamsysRuntimeStartedAt.Add(-nativeRuntimeJitterDuration(120, 220))
-	nativeWamsysRuntimeSourceDirMTime = nativeWamsysRuntimeStartedAt.Add(-nativeRuntimeJitterDuration(150, 260))
+	nativeWamsysPathStatusOK               = 0
 )
 
 func (localWamsysMaterialProvider) RegistrationMaterial(ctx context.Context, input wamsysMaterialInput) (*waappv1.WamsysCapture, error) {
@@ -71,45 +66,44 @@ func buildLocalWamsysCapture(input wamsysMaterialInput) (*waappv1.WamsysCapture,
 }
 
 func buildLocalWamsysGA(input wamsysMaterialInput) ([]byte, error) {
-	now := nativeWamsysNow(input)
-	bi, err := encryptNativeGPIAData(nativeGPIAKeySource(input.State), []byte(nativeWamsysRuntimeBootID))
+	bi, err := encryptNativeGPIAData(nativeGPIAKeySource(input.State), []byte(nativeWamsysBootID(input)))
 	if err != nil {
 		return nil, err
 	}
 	return []byte(fmt.Sprintf(
-		`{"mu":false,"mp":false,"ae":0,"ai":%d,"ap":%d,"bi":%q}`,
-		nativeRuntimePathAgeSeconds(now, nativeWamsysRuntimeDataDirMTime),
-		nativeRuntimePathAgeSeconds(now, nativeWamsysRuntimeSourceDirMTime),
+		`{"bi":%q,"ap":%d,"ai":%d,"mp":false,"ae":%d,"mu":false}`,
 		bi,
+		nativeWamsysPathStatusOK,
+		nativeWamsysPathStatusOK,
+		nativeWamsysPathStatusOK,
 	)), nil
 }
 
-func nativeWamsysNow(input wamsysMaterialInput) time.Time {
-	now := input.Now
-	if now.IsZero() {
-		now = time.Now()
-	}
-	return now.UTC()
-}
-
-func nativeRuntimePathAgeSeconds(now time.Time, modifiedAt time.Time) int64 {
-	if now.IsZero() {
-		now = time.Now().UTC()
-	}
-	if modifiedAt.IsZero() || now.Before(modifiedAt) {
-		return 0
-	}
-	return int64(now.Sub(modifiedAt).Seconds())
-}
-
-func nativeRuntimeJitterDuration(minSeconds int64, maxSeconds int64) time.Duration {
-	if maxSeconds <= minSeconds {
-		return time.Duration(minSeconds) * time.Second
-	}
-	raw := randomBytes(4)
-	value := binary.BigEndian.Uint32(raw)
-	span := uint32(maxSeconds - minSeconds + 1)
-	return time.Duration(minSeconds+int64(value%span)) * time.Second
+func nativeWamsysBootID(input wamsysMaterialInput) string {
+	profile := normalizeNativePhoneProfile(input.State.Profile, "")
+	seed := strings.Join([]string{
+		"byte-v-forge-wa-boot-id/v1",
+		phoneCC(input.Phone),
+		phoneNational(input.Phone),
+		input.State.Profile.PhoneSHA256,
+		profile.FDID,
+		profile.ExpIDUUID,
+		input.State.Profile.AccessSessionIDUUID,
+		input.State.AuthKey,
+		input.State.KeyBundle.IdentityPublic,
+	}, "|")
+	sum := sha256.Sum256([]byte(seed))
+	id := append([]byte(nil), sum[:16]...)
+	id[6] = (id[6] & 0x0f) | 0x40
+	id[8] = (id[8] & 0x3f) | 0x80
+	encoded := hex.EncodeToString(id)
+	return strings.Join([]string{
+		encoded[0:8],
+		encoded[8:12],
+		encoded[12:16],
+		encoded[16:20],
+		encoded[20:32],
+	}, "-")
 }
 
 func nativeWamsysAndroidIDDigest(input wamsysMaterialInput) []byte {
