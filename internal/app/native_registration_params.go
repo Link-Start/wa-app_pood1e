@@ -72,9 +72,7 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	if token := e.registrationToken(phone, state); token != "" {
 		params.set("token", token, false)
 	}
-	if nativeRegistrationMethodUsesExplicitCodeMethod(methodName) {
-		params.set("method", methodName, false)
-	}
+	params.set("method", methodName, false)
 	if nativeRegistrationMethodUsesAuthContext(methodName) {
 		if contextValue := strings.TrimSpace(authCodeContext); contextValue != "" {
 			params.set("context", contextValue, false)
@@ -101,10 +99,6 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 		addOptionalRawParam(&params, "feo2_query_status", fields["feo2_query_status"])
 	}
 	return params, nil
-}
-
-func nativeRegistrationMethodUsesExplicitCodeMethod(methodName string) bool {
-	return methodName != "sms"
 }
 
 func nativeRegistrationMethodUsesToken(methodName string) bool {
