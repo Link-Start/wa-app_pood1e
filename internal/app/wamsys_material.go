@@ -82,29 +82,11 @@ func buildLocalWamsysGA(input wamsysMaterialInput) ([]byte, error) {
 
 func nativeWamsysPathAgeSeconds(input wamsysMaterialInput, label string) int64 {
 	now := nativeWamsysNow(input)
-	createdAt := input.State.CreatedAtUnix
-	if createdAt <= 0 {
-		createdAt = input.State.Profile.CreatedAtUnix
-	}
-	if createdAt <= 0 || createdAt > now.Unix() {
-		createdAt = now.Unix()
-	}
-	virtualModifiedAt := createdAt - nativeWamsysPathInitialAgeSeconds(input, label)
-	return maxInt64(0, now.Unix()-virtualModifiedAt)
+	return maxInt64(0, nativeRuntimePathInitialAgeSeconds(label)+(now.Unix()-nativeRuntimeStartedAtUnix))
 }
 
-func nativeWamsysPathInitialAgeSeconds(input wamsysMaterialInput, label string) int64 {
-	profile := normalizeNativePhoneProfile(input.State.Profile, "")
-	seed := strings.Join([]string{
-		"byte-v-forge-wa-path-mtime/v1",
-		label,
-		phoneCC(input.Phone),
-		phoneNational(input.Phone),
-		input.State.Profile.PhoneSHA256,
-		profile.FDID,
-		profile.ExpIDUUID,
-		input.State.AuthKey,
-	}, "|")
+func nativeRuntimePathInitialAgeSeconds(label string) int64 {
+	seed := "byte-v-forge-wa-runtime-path-mtime/v1|" + label + "|" + nativeRuntimeInstallSeed
 	sum := sha256.Sum256([]byte(seed))
 	return nativeWamsysPathAgeMinSeconds + int64(binary.BigEndian.Uint64(sum[:8])%nativeWamsysPathAgeSpreadSeconds)
 }
@@ -131,6 +113,8 @@ func nativeWamsysBootID(input wamsysMaterialInput) string {
 
 var nativeRuntimeBootID = newNativeRuntimeBootID()
 
+var nativeRuntimeStartedAtUnix = time.Now().UTC().Unix()
+
 func newNativeRuntimeBootID() string {
 	sum := randomBytes(16)
 	id := append([]byte(nil), sum[:16]...)
@@ -151,21 +135,15 @@ func nativeWamsysAndroidIDDigest(input wamsysMaterialInput) []byte {
 }
 
 func nativeWamsysAndroidID(input wamsysMaterialInput) string {
-	profile := normalizeNativePhoneProfile(input.State.Profile, "")
-	seed := strings.Join([]string{
-		"byte-v-forge-wa-android-id/v1",
-		phoneCC(input.Phone),
-		phoneNational(input.Phone),
-		input.State.Profile.PhoneSHA256,
-		profile.FDID,
-		profile.ExpIDUUID,
-		input.State.Profile.AccessSessionIDUUID,
-		input.State.AuthKey,
-		input.State.KeyBundle.IdentityPublic,
-	}, "|")
-	sum := sha256.Sum256([]byte(seed))
-	return fmt.Sprintf("%016x", binary.BigEndian.Uint64(sum[:8]))
+	_ = input
+	return nativeRuntimeAndroidID
 }
+
+func newNativeRuntimeAndroidID() string {
+	return fmt.Sprintf("%016x", binary.BigEndian.Uint64(randomBytes(8)))
+}
+
+var nativeRuntimeAndroidID = newNativeRuntimeAndroidID()
 
 func (e *NativeEngine) applyRuntimeWamsys(
 	ctx context.Context,

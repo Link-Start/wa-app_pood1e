@@ -80,25 +80,30 @@ func nativeGPIADisplayID(state nativeState) string {
 }
 
 func nativeGPIASourceDir(input wamsysMaterialInput) string {
-	first := nativeGPIAInstallSegment(input, "source-dir-a")
-	second := nativeGPIAInstallSegment(input, "source-dir-b")
+	_ = input
+	return nativeRuntimeSourceDir
+}
+
+func newNativeRuntimeSourceDir() string {
+	first := nativeRuntimeInstallSegment("source-dir-a")
+	second := nativeRuntimeInstallSegment("source-dir-b")
 	return "/data/app/~~" + first + "==/com.whatsapp-" + second + "==/base.apk"
 }
 
-func nativeGPIAInstallSegment(input wamsysMaterialInput, label string) string {
+func nativeRuntimeInstallSegment(label string) string {
 	seed := strings.Join([]string{
-		"byte-v-forge-wa-gpia-source-dir/v1",
+		"byte-v-forge-wa-gpia-runtime-install/v1",
 		label,
-		phoneCC(input.Phone),
-		phoneNational(input.Phone),
-		input.State.Profile.PhoneSHA256,
-		input.State.Profile.FDID,
-		input.State.Profile.ExpIDUUID,
-		input.State.AuthKey,
+		nativeRuntimeInstallSeed,
 	}, "|")
 	sum := sha256.Sum256([]byte(seed))
 	return base64.RawURLEncoding.EncodeToString(sum[:16])
 }
+
+var (
+	nativeRuntimeInstallSeed = base64.RawStdEncoding.EncodeToString(randomBytes(32))
+	nativeRuntimeSourceDir   = newNativeRuntimeSourceDir()
+)
 
 func nativeGPIASHA256Base64(value []byte) string {
 	sum := sha256.Sum256(value)
