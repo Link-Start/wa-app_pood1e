@@ -82,9 +82,6 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	if advertisingID := nativeAdvertisingID(state); advertisingID != "" && shouldSendNativeAdvertisingID(phone) && nativeRegistrationMethodUsesAdvertisingID(methodName) {
 		params.set("advertising_id", advertisingID, false)
 	}
-	if methodName == "acc_tr" {
-		applyNativeCodeRequestPermissionParams(&params, fields)
-	}
 	applyNativeE2EParams(&params, state)
 	applyNativeCodeRequestMapParams(&params, fields, methodName, attempts)
 	var capture *waappv1.WamsysCapture
@@ -113,12 +110,6 @@ func nativeRegistrationMethodUsesAuthContext(methodName string) bool {
 
 func nativeRegistrationMethodUsesAdvertisingID(methodName string) bool {
 	return methodName != "acc_tr"
-}
-
-func applyNativeCodeRequestPermissionParams(params *orderedParams, fields map[string]string) {
-	addRawParam(params, "clicked_education_link", firstNonEmpty(fields["clicked_education_link"], "-1"))
-	addRawParam(params, "manage_call_permission", firstNonEmpty(fields["manage_call_permission"], "false"))
-	addRawParam(params, "call_log_permission", firstNonEmpty(fields["call_log_permission"], "false"))
 }
 
 func applyNativeE2EParams(params *orderedParams, state nativeState) {
