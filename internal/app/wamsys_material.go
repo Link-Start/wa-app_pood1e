@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"strings"
+	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 )
@@ -17,6 +18,7 @@ type wamsysMaterialInput struct {
 	Kind    waappv1.RegistrationRequestKind
 	Phone   *waappv1.PhoneTarget
 	State   nativeState
+	Now     time.Time
 }
 
 type wamsysMaterialProvider interface {
@@ -27,7 +29,13 @@ type localWamsysMaterialProvider struct{}
 
 const (
 	nativeWamsysSmallByteLength = 32
-	nativeWamsysGAByteLength    = 64
+)
+
+var (
+	nativeWamsysRuntimeStartedAt      = time.Now().UTC()
+	nativeWamsysRuntimeBootID         = newUUIDString()
+	nativeWamsysRuntimeDataDirMTime   = nativeWamsysRuntimeStartedAt.Add(-nativeRuntimeJitterDuration(120, 220))
+	nativeWamsysRuntimeSourceDirMTime = nativeWamsysRuntimeStartedAt.Add(-nativeRuntimeJitterDuration(150, 260))
 )
 
 func (localWamsysMaterialProvider) RegistrationMaterial(ctx context.Context, input wamsysMaterialInput) (*waappv1.WamsysCapture, error) {
@@ -49,20 +57,61 @@ func buildLocalWamsysCapture(input wamsysMaterialInput) (*waappv1.WamsysCapture,
 	if err != nil {
 		return nil, err
 	}
+	ga, err := buildLocalWamsysGA(input)
+	if err != nil {
+		return nil, err
+	}
 	return &waappv1.WamsysCapture{MapParams: []*waappv1.WamsysMapParam{
 		{Key: "gpia", Value: []byte(gpia.Primary)},
 		{Key: "_ge", Value: []byte(`{"sb":false,"sv":false}`)},
 		{Key: "_gi", Value: []byte(gpia.DeviceCompact)},
 		{Key: "_gg", Value: []byte(gpia.CodeCompact)},
 		{Key: "_gp", Value: localWamsysBase64Bytes(deriveLocalWamsysBytes(input, "_gp", nativeWamsysSmallByteLength))},
-		{Key: "_ga", Value: buildLocalWamsysGA(input)},
+		{Key: "_ga", Value: ga},
 		{Key: "aid", Value: localWamsysBase64Bytes(deriveLocalWamsysBytes(input, "aid", nativeWamsysSmallByteLength))},
 	}}, nil
 }
 
-func buildLocalWamsysGA(input wamsysMaterialInput) []byte {
-	bi := base64.StdEncoding.EncodeToString(deriveLocalWamsysBytes(input, "_ga.bi", nativeWamsysGAByteLength))
-	return []byte(fmt.Sprintf(`{"ai":141,"ae":0,"ap":172,"bi":%q,"mp":false,"mu":false}`, bi))
+func buildLocalWamsysGA(input wamsysMaterialInput) ([]byte, error) {
+	now := nativeWamsysNow(input)
+	bi, err := encryptNativeGPIAData(nativeGPIAKeySource(input.State), []byte(nativeWamsysRuntimeBootID))
+	if err != nil {
+		return nil, err
+	}
+	return []byte(fmt.Sprintf(
+		`{"mu":false,"mp":false,"ae":0,"ai":%d,"ap":%d,"bi":%q}`,
+		nativeRuntimePathAgeSeconds(now, nativeWamsysRuntimeDataDirMTime),
+		nativeRuntimePathAgeSeconds(now, nativeWamsysRuntimeSourceDirMTime),
+		bi,
+	)), nil
+}
+
+func nativeWamsysNow(input wamsysMaterialInput) time.Time {
+	now := input.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	return now.UTC()
+}
+
+func nativeRuntimePathAgeSeconds(now time.Time, modifiedAt time.Time) int64 {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if modifiedAt.IsZero() || now.Before(modifiedAt) {
+		return 0
+	}
+	return int64(now.Sub(modifiedAt).Seconds())
+}
+
+func nativeRuntimeJitterDuration(minSeconds int64, maxSeconds int64) time.Duration {
+	if maxSeconds <= minSeconds {
+		return time.Duration(minSeconds) * time.Second
+	}
+	raw := randomBytes(4)
+	value := binary.BigEndian.Uint32(raw)
+	span := uint32(maxSeconds - minSeconds + 1)
+	return time.Duration(minSeconds+int64(value%span)) * time.Second
 }
 
 func localWamsysBase64Bytes(value []byte) []byte {
@@ -103,7 +152,7 @@ func (e *NativeEngine) applyRuntimeWamsys(
 	params map[string]string,
 	rawKeys map[string]struct{},
 ) error {
-	capture, err := e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Kind: kind, Phone: phone, State: state})
+	capture, err := e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Kind: kind, Phone: phone, State: state, Now: e.clock.Now()})
 	if err != nil {
 		return err
 	}

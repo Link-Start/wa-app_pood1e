@@ -57,16 +57,17 @@ func buildNativeGPIAErrorMaterial(input wamsysMaterialInput) (nativeGPIAMaterial
 		return nativeGPIAMaterial{}, err
 	}
 	deviceCompact, err := encryptNativeGPIAJSON(keySource, []nativeGPIAJSONField{
-		{Key: "_dh", Value: nativeGPIAClassesDigest},
-		{Key: "_iln", Value: nativeGPIADataSODigest},
-		{Key: "_isb", Value: nativeGPIASourceSize},
-		{Key: "_ip", Value: nativeGPIAPackageName},
-		{Key: "did", Value: nativeGPIADisplayID(input.State)},
-		{Key: "_p", Value: sourceDir},
-		{Key: "_ln", Value: nativeGPIANativeLibDigest},
-		{Key: "_ist", Value: nativeGPIASourceDigest},
-		{Key: "_icr", Value: nativeGPIACertDigest},
 		{Key: "_is", Value: pathDigest},
+		{Key: "_p", Value: sourceDir},
+		{Key: "_icr", Value: nativeGPIACertDigest},
+		{Key: "_hp", Value: nativeGPIARuntimeHP(input, sourceDir, pathDigest)},
+		{Key: "_ist", Value: nativeGPIASourceDigest},
+		{Key: "_ip", Value: nativeGPIAPackageName},
+		{Key: "_isb", Value: nativeGPIASourceSize},
+		{Key: "_ln", Value: nativeGPIANativeLibDigest},
+		{Key: "_iln", Value: nativeGPIADataSODigest},
+		{Key: "_dh", Value: nativeGPIAClassesDigest},
+		{Key: "did", Value: nativeGPIADisplayID(input.State)},
 	})
 	if err != nil {
 		return nativeGPIAMaterial{}, err
@@ -105,6 +106,30 @@ func nativeGPIASHA256Base64(value []byte) string {
 	return base64.StdEncoding.EncodeToString(sum[:])
 }
 
+func nativeGPIARuntimeHP(input wamsysMaterialInput, sourceDir string, pathDigest string) string {
+	now := nativeWamsysNow(input)
+	profile := normalizeNativePhoneProfile(input.State.Profile, "")
+	material := strings.Join([]string{
+		"byte-v-forge-wa-gpia-runtime-hp/v1",
+		nativeWamsysRuntimeBootID,
+		nativeGPIAPackageName,
+		sourceDir,
+		pathDigest,
+		nativeGPIASourceSize,
+		nativeGPIASourceDigest,
+		nativeGPIAClassesDigest,
+		nativeGPIANativeLibDigest,
+		nativeGPIADataSODigest,
+		profile.DeviceVendor,
+		profile.DeviceModel,
+		profile.AndroidVersion,
+		profile.BuildDisplayID,
+		strconv.FormatInt(nativeRuntimePathAgeSeconds(now, nativeWamsysRuntimeDataDirMTime), 10),
+		strconv.FormatInt(nativeRuntimePathAgeSeconds(now, nativeWamsysRuntimeSourceDirMTime), 10),
+	}, "\n")
+	return nativeGPIASHA256Base64([]byte(material))
+}
+
 func nativeGPIAKeySource(state nativeState) string {
 	if private, err := state.ChatStatic.privateBytes(); err == nil && len(private) == curve25519.ScalarSize {
 		if public, err := curve25519.X25519(private, curve25519.Basepoint); err == nil {
@@ -125,6 +150,10 @@ func encryptNativeGPIAJSON(keySource string, fields []nativeGPIAJSONField) (stri
 	if err != nil {
 		return "", err
 	}
+	return encryptNativeGPIAData(keySource, plaintext)
+}
+
+func encryptNativeGPIAData(keySource string, plaintext []byte) (string, error) {
 	key := sha256.Sum256([]byte(keySource))
 	iv := randomBytes(aes.BlockSize)
 	ciphertext, err := aesCBCPKCS7Encrypt(plaintext, key[:], iv)

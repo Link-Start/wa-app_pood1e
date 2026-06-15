@@ -86,7 +86,7 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	var capture *waappv1.WamsysCapture
 	if includeWamsys {
 		var err error
-		capture, err = e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: wamsysCapture, Kind: waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_CODE, Phone: phone, State: state})
+		capture, err = e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: wamsysCapture, Kind: waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_CODE, Phone: phone, State: state, Now: e.clock.Now()})
 		if err != nil {
 			return nil, err
 		}
