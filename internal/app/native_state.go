@@ -442,6 +442,10 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 	}
 }
 
+func nativeRegistrationEphemeralID() string {
+	return pctBytes(randomBytes(20))
+}
+
 func nativeAdvertisingID(state nativeState) string {
 	if value := strings.TrimSpace(state.Profile.AdvertisingID); value != "" {
 		return value

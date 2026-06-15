@@ -740,7 +740,7 @@ func (e *NativeEngine) registerParams(phone *waappv1.PhoneTarget, method waappv1
 		"fdid":              firstNonEmpty(state.LastCodeParams["fdid"], state.Profile.FDID),
 		"expid":             firstNonEmpty(state.LastCodeParams["expid"], state.Profile.ExpID),
 		"access_session_id": firstNonEmpty(state.LastCodeParams["access_session_id"], state.Profile.AccessSessionID),
-		"id":                firstNonEmpty(state.LastCodeParams["id"], state.Profile.ID),
+		"id":                nativeRegistrationEphemeralID(),
 		"backup_token":      firstNonEmpty(state.LastCodeParams["backup_token"], state.Profile.BackupToken),
 		"code":              code,
 		"authkey":           firstNonEmpty(state.LastCodeParams["authkey"], state.AuthKey),

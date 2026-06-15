@@ -24,7 +24,7 @@ func (e *NativeEngine) existParams(phone *waappv1.PhoneTarget, state nativeState
 		"fdid":              state.Profile.FDID,
 		"expid":             state.Profile.ExpID,
 		"access_session_id": state.Profile.AccessSessionID,
-		"id":                state.Profile.ID,
+		"id":                nativeRegistrationEphemeralID(),
 		"backup_token":      state.Profile.BackupToken,
 		"authkey":           state.AuthKey,
 		"e_ident":           state.KeyBundle.IdentityPublic,
@@ -67,7 +67,7 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	if state.Profile.AccessSessionID != "" {
 		params.set("access_session_id", state.Profile.AccessSessionID, false)
 	}
-	params.set("id", state.Profile.ID, true)
+	params.set("id", nativeRegistrationEphemeralID(), true)
 	params.set("backup_token", state.Profile.BackupToken, true)
 	if token := e.registrationToken(phone, state); token != "" {
 		params.set("token", token, false)
@@ -433,10 +433,10 @@ func nativeCodeClientMetrics(attempts int) string {
 		AppCampaignDownloadSource string `json:"app_campaign_download_source"`
 	}{
 		Attempts:                  nativeCodeClientMetricAttempts(attempts),
-		AppCampaignDownloadSource: "google-play|unknown",
+		AppCampaignDownloadSource: nativeDefaultAppCampaignDownloadSource,
 	})
 	if err != nil {
-		return `{"attempts":1,"app_campaign_download_source":"google-play|unknown"}`
+		return `{"attempts":1,"app_campaign_download_source":"google-play"}`
 	}
 	return string(body)
 }
@@ -461,6 +461,8 @@ func nativeCodeEntryMethod(method string) string {
 		return "2"
 	}
 }
+
+const nativeDefaultAppCampaignDownloadSource = "google-play"
 
 const defaultRegistrationTokenHMACKeyHex = "44539b934347b6f12609296e69145b58309df94ed0a8a5a2d94078a8eaff87013e3d95a69644aa1b924646532c279f8bcd2855ab55f2c8bc1693adb7800c88ff"
 
@@ -501,7 +503,7 @@ func existDeviceMap(state nativeState) map[string]string {
 	return map[string]string{
 		"mistyped":                        "7",
 		"offline_ab":                      `{"exposure":[],"exp_hash":[],"metrics":{}}`,
-		"client_metrics":                  `{"attempts":1,"app_campaign_download_source":"google-play|unknown","was_activated_from_stub":false}`,
+		"client_metrics":                  `{"attempts":1,"app_campaign_download_source":"google-play","was_activated_from_stub":false}`,
 		"read_phone_permission_granted":   "0",
 		"sim_state":                       "1",
 		"network_operator_name":           fields["network_operator_name"],
