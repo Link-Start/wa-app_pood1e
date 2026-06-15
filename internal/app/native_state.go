@@ -36,6 +36,7 @@ type nativeState struct {
 	LastCodeResult       map[string]any                  `json:"last_code_result,omitempty"`
 	LastRegister         map[string]any                  `json:"last_register,omitempty"`
 	AccountTransfer      nativeAccountTransferState      `json:"account_transfer,omitempty"`
+	PreChatdAB           nativePreChatdABState           `json:"pre_chatd_ab,omitempty"`
 	RegistrationJID      string                          `json:"registration_jid,omitempty"`
 	ChatRoutingInfo      string                          `json:"chat_routing_info,omitempty"`
 	ChatConnection       nativeChatConnectionState       `json:"chat_connection,omitempty"`
