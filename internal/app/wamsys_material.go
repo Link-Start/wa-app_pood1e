@@ -28,8 +28,11 @@ type localWamsysMaterialProvider struct{}
 
 const (
 	nativeWamsysRequestedPermissionsDigest = "NNj5BoWX+yvZBYEY46Ze+Ad6Ykk0Z27FjgSysvkzzCU="
-	nativeWamsysPathAgeMinSeconds          = int64(1024)
-	nativeWamsysPathAgeSpreadSeconds       = uint64(4096)
+	nativeWamsysInstallAgeMinSeconds       = int64(9600)
+	nativeWamsysInstallAgeSpreadSeconds    = uint64(2048)
+	nativeWamsysDataAgeDeltaMinSeconds     = int64(4600)
+	nativeWamsysDataAgeDeltaSpreadSeconds  = uint64(2048)
+	nativeWamsysPathAgeJitterSeconds       = uint64(512)
 )
 
 func (localWamsysMaterialProvider) RegistrationMaterial(ctx context.Context, input wamsysMaterialInput) (*waappv1.WamsysCapture, error) {
@@ -72,11 +75,11 @@ func buildLocalWamsysGA(input wamsysMaterialInput) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(fmt.Sprintf(
-		`{"mu":false,"mp":false,"ae":%d,"ai":%d,"ap":%d,"bi":%q}`,
-		nativeWamsysPathAgeSeconds(input, "external-files-dir"),
-		nativeWamsysPathAgeSeconds(input, "data-dir"),
-		nativeWamsysPathAgeSeconds(input, "source-dir"),
+		`{"bi":%q,"ap":%d,"ai":%d,"mp":false,"ae":%d,"mu":false}`,
 		bi,
+		nativeWamsysPathAgeSeconds(input, "source-dir"),
+		nativeWamsysPathAgeSeconds(input, "data-dir"),
+		nativeWamsysPathAgeSeconds(input, "external-files-dir"),
 	)), nil
 }
 
@@ -94,6 +97,28 @@ func nativeWamsysPathAgeSeconds(input wamsysMaterialInput, label string) int64 {
 }
 
 func nativeWamsysPathInitialAgeSeconds(input wamsysMaterialInput, label string) int64 {
+	installAge := nativeWamsysVirtualInstallAgeSeconds(input)
+	switch label {
+	case "source-dir":
+		return installAge + nativeWamsysStableJitterSeconds(input, "source-dir-jitter", nativeWamsysPathAgeJitterSeconds)
+	case "data-dir":
+		delta := nativeWamsysDataAgeDeltaMinSeconds + nativeWamsysStableJitterSeconds(input, "data-dir-delta", nativeWamsysDataAgeDeltaSpreadSeconds)
+		return maxInt64(1024, installAge-delta)
+	case "external-files-dir":
+		return maxInt64(1024, installAge-nativeWamsysStableJitterSeconds(input, "external-files-dir-jitter", nativeWamsysPathAgeJitterSeconds))
+	default:
+		return installAge
+	}
+}
+
+func nativeWamsysVirtualInstallAgeSeconds(input wamsysMaterialInput) int64 {
+	return nativeWamsysInstallAgeMinSeconds + nativeWamsysStableJitterSeconds(input, "install-age", nativeWamsysInstallAgeSpreadSeconds)
+}
+
+func nativeWamsysStableJitterSeconds(input wamsysMaterialInput, label string, spread uint64) int64 {
+	if spread == 0 {
+		return 0
+	}
 	profile := normalizeNativePhoneProfile(input.State.Profile, "")
 	seed := strings.Join([]string{
 		"byte-v-forge-wa-path-mtime/v1",
@@ -106,7 +131,7 @@ func nativeWamsysPathInitialAgeSeconds(input wamsysMaterialInput, label string) 
 		input.State.AuthKey,
 	}, "|")
 	sum := sha256.Sum256([]byte(seed))
-	return nativeWamsysPathAgeMinSeconds + int64(binary.BigEndian.Uint64(sum[:8])%nativeWamsysPathAgeSpreadSeconds)
+	return int64(binary.BigEndian.Uint64(sum[:8]) % spread)
 }
 
 func nativeWamsysNow(input wamsysMaterialInput) time.Time {
