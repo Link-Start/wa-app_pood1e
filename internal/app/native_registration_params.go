@@ -363,7 +363,7 @@ func newNativeRuntimeProcessID() string {
 const (
 	nativeDefaultFeo2QueryStatus   = "error_security_exception"
 	staleNativeFeo2QueryStatus     = "did_not_query"
-	nativeDefaultDebugBridgeStatus = "0"
+	nativeDefaultDebugBridgeStatus = "1"
 )
 
 func nativeDefaultDeviceMapFields() map[string]string {
