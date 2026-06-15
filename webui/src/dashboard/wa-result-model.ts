@@ -175,7 +175,7 @@ function deriveAccountFlow(input: { registered?: boolean; blocked?: boolean; sms
 export function waProbeCanStartRegistration(result?: WaWorkflowResponse | null, method = 'VERIFICATION_DELIVERY_METHOD_SMS', elapsedSeconds = 0) {
   const status = waProbeStatus(result);
   const selectedMethod = methodLabel(method);
-  if (!['SMS', '语音', '旧设备', '设备转移', '邮箱', '发送 SMS 至 WA'].includes(selectedMethod)) return false;
+  if (!['SMS', '语音', '旧设备', '邮箱', '发送 SMS 至 WA'].includes(selectedMethod)) return false;
   const methodAvailable = status.methodStatuses.some((item) => item.label === selectedMethod && (item.available === true || cooldownExpired(item.cooldownSeconds, elapsedSeconds)) && !cooldownActive(item.cooldownSeconds, elapsedSeconds));
   return Boolean(result)
     && !status.requestFailed

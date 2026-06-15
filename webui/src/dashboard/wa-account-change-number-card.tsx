@@ -26,7 +26,7 @@ export function WaAccountChangeNumberCard({ account, busy, onError }: Props) {
       <div className="flex items-start justify-between gap-3">
         <div className="grid gap-1">
           <div className="inline-flex items-center gap-2 text-sm font-medium"><ArrowRightLeft size={15} />账号迁移 / 换绑手机号</div>
-          <div className="text-xs text-muted-foreground">对应已登录账号安全设置里的 Change number，不是注册侧设备转移。</div>
+          <div className="text-xs text-muted-foreground">对应已登录账号安全设置里的 Change number，不是注册侧旧设备验证。</div>
         </div>
       </div>
       <FieldGroup>

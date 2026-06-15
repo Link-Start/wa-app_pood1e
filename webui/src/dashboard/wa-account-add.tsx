@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, KeyRound, Search } from 'lucide-react';
+import { CheckCircle2, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { pollWaAccountTransferRegistration, probeWaPhoneSMS, refreshWaAccountTransferChallenge, registerWaPhone, submitWaRegistrationOTP, type WaWorkflowResponse } from './wa-api';
-import { copyClipboardText, probeMatchesValues, registrationFailureMessage, workflowText, type WaAccountAddProbeState } from './wa-account-add-model';
+import { probeWaPhoneSMS, registerWaPhone, submitWaRegistrationOTP, type WaWorkflowResponse } from './wa-api';
+import { probeMatchesValues, registrationFailureMessage, workflowText, type WaAccountAddProbeState } from './wa-account-add-model';
 import { WhatsAppIcon } from './wa-brand-icon';
 import { accountReasonLabel } from './wa-result-labels';
 import { waProbeStatus } from './wa-result-model';
@@ -14,8 +14,7 @@ import { WaRegistrationChannelButtons } from './wa-registration-channel-buttons'
 import { WaRegistrationOtpCard, WA_REGISTRATION_OTP_LENGTH } from './wa-registration-otp-card';
 import { registrationAnyMethodAvailable, registrationChannelsHardBlocked, type SelectableRegistrationMethodOption } from './wa-registration-methods';
 import { resolveWaPhoneTarget, type WaResolvedPhone } from './wa-utils';
-import { WaRegistrationDeviceTransferCard } from './wa-registration-device-transfer-card';
-type PendingRegistration = { accountID: string; verificationRequestID: string; accountTransferChallenge?: Record<string, unknown> };
+type PendingRegistration = { accountID: string; verificationRequestID: string };
 type Props = { disabled?: boolean; onChanged: () => void | Promise<void>; onDone: (message: string) => void; onError: (message: string) => void };
 export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
   const [phone, setPhone] = useState('');
@@ -41,8 +40,7 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
   const canRegister = samePhone && registrationAnyMethodAvailable(channelStatus, cooldownElapsedSeconds) && !channelsHardBlocked;
   const detected = samePhone && Boolean(channelStatus);
   const badgeVariant = pending ? 'default' : blocked ? 'destructive' : canRegister ? 'default' : detected ? 'secondary' : 'outline';
-  const accountTransferPending = Boolean(pending?.accountTransferChallenge);
-  const badgeLabel = pending ? accountTransferPending ? '等待设备确认' : '等待 OTP' : blocked ? '已封禁' : canRegister ? '可注册' : detected ? '无可直发' : '待检测';
+  const badgeLabel = pending ? '等待 OTP' : blocked ? '已封禁' : canRegister ? '可注册' : detected ? '无可直发' : '待检测';
 
   useEffect(() => {
     const activeResult = activeRegistrationResult || (samePhone ? probe?.result : null);
@@ -70,7 +68,6 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
   }
   async function submitOTP() {
     if (!pending) return onError('没有等待中的 OTP');
-    if (pending.accountTransferChallenge) return onError('设备转移不使用 OTP 输入');
     const code = otp.trim();
     if (!code) return onError('请输入 OTP');
     if (code.length !== WA_REGISTRATION_OTP_LENGTH) return onError(`请输入 ${WA_REGISTRATION_OTP_LENGTH} 位 OTP`);
@@ -105,10 +102,10 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
       }
       const accountID = workflowText(result, 'wa_account_id');
       const verificationRequestID = workflowText(result, 'verification_request_id');
-      if (accountID) setPending({ accountID, verificationRequestID, accountTransferChallenge: result.account_transfer_challenge });
+      if (accountID) setPending({ accountID, verificationRequestID });
       setProbe(null);
       setOtp('');
-      onDone(result.account_transfer_challenge ? '设备转移已发起' : accountID ? 'OTP 已发送' : '已发起');
+      onDone(accountID ? 'OTP 已发送' : '已发起');
       await onChanged();
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
@@ -121,40 +118,12 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
     setCooldownStartedAt(now);
     setClockNow(now);
   }
-  async function refreshAccountTransfer() {
-    if (!pending?.verificationRequestID) return onError('缺少验证请求');
-    setBusy(true);
-    try {
-      const result = await refreshWaAccountTransferChallenge(pending.verificationRequestID);
-      if (result.success === false || result.error_message) throw new Error(accountReasonLabel(result.error_message, result.status) || '刷新设备转移 Deeplink 失败');
-      setPending({ ...pending, accountTransferChallenge: result.account_transfer_challenge });
-    } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function pollAccountTransfer() {
-    if (!pending?.verificationRequestID) return onError('缺少验证请求');
-    setBusy(true);
-    try {
-      const result = await pollWaAccountTransferRegistration(pending.verificationRequestID, pending.accountID, 1);
-      if (result.success === false || result.error_message) throw new Error(accountReasonLabel(result.error_message, result.status) || '设备转移仍在等待确认');
-      setPending(null);
-      onDone('设备转移已完成');
-      await onChanged();
-    } catch (error) {
-      onError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusy(false);
-    }
-  }
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div className="grid gap-1"><CardTitle className="inline-flex items-center gap-2 text-base"><WhatsAppIcon className="size-5" />添加 WAAccount</CardTitle></div>
         <Badge variant={badgeVariant}>
-          {pending ? <KeyRound size={12} /> : canRegister ? <CheckCircle2 size={12} /> : null}
+          {canRegister ? <CheckCircle2 size={12} /> : null}
           {badgeLabel}
         </Badge>
       </CardHeader>
@@ -175,18 +144,10 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
         {showChannels && (
           <Field>
             <FieldLabel>通道</FieldLabel>
-            <WaRegistrationChannelButtons status={channelStatus} elapsedSeconds={cooldownElapsedSeconds} disabled={busy || disabled || accountTransferPending || channelsHardBlocked} onStart={(method) => void startRegistration(method)} />
+            <WaRegistrationChannelButtons status={channelStatus} elapsedSeconds={cooldownElapsedSeconds} disabled={busy || disabled || channelsHardBlocked} onStart={(method) => void startRegistration(method)} />
           </Field>
         )}
-        {pending && (pending.accountTransferChallenge ? (
-          <WaRegistrationDeviceTransferCard
-            challenge={pending.accountTransferChallenge}
-            busy={busy}
-            onCopy={(value) => void copyClipboardText(value, onDone, onError)}
-            onPoll={() => void pollAccountTransfer()}
-            onRefresh={() => void refreshAccountTransfer()}
-          />
-        ) : <WaRegistrationOtpCard value={otp} busy={busy} onChange={setOtp} onSubmit={() => void submitOTP()} />)}
+        {pending && <WaRegistrationOtpCard value={otp} busy={busy} onChange={setOtp} onSubmit={() => void submitOTP()} />}
       </CardContent>
     </Card>
   );
