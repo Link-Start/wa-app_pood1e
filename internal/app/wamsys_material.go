@@ -28,10 +28,10 @@ type localWamsysMaterialProvider struct{}
 
 const (
 	nativeWamsysRequestedPermissionsDigest = "NNj5BoWX+yvZBYEY46Ze+Ad6Ykk0Z27FjgSysvkzzCU="
-	nativeWamsysInstallAgeMinSeconds       = int64(9600)
-	nativeWamsysInstallAgeSpreadSeconds    = uint64(2048)
-	nativeWamsysDataAgeDeltaMinSeconds     = int64(4600)
-	nativeWamsysDataAgeDeltaSpreadSeconds  = uint64(2048)
+	nativeWamsysInstallAgeMinSeconds       = int64(10800)
+	nativeWamsysInstallAgeSpreadSeconds    = uint64(512)
+	nativeWamsysDataAgeDeltaMinSeconds     = int64(5600)
+	nativeWamsysDataAgeDeltaSpreadSeconds  = uint64(768)
 	nativeWamsysPathAgeJitterSeconds       = uint64(512)
 )
 

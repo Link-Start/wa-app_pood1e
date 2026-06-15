@@ -380,10 +380,10 @@ func nativeDefaultDeviceMapFields() map[string]string {
 		"feo2_query_status":     nativeDefaultFeo2QueryStatus,
 		"network_operator_name": "",
 		"sim_operator_name":     "",
-		"mcc":                   "000",
-		"mnc":                   "000",
-		"sim_mcc":               "000",
-		"sim_mnc":               "000",
+		"mcc":                   "",
+		"mnc":                   "",
+		"sim_mcc":               "",
+		"sim_mnc":               "",
 	}
 }
 
