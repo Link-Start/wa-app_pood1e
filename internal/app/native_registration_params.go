@@ -91,7 +91,9 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 			return nil, err
 		}
 	}
-	applyOrderedWamsysKey(&params, capture, "gpia")
+	if nativeShouldSendRegistrationGPIA(state) {
+		applyOrderedWamsysKey(&params, capture, "gpia")
+	}
 	addOptionalRawParam(&params, "db", fields["db"])
 	addOptionalRawParam(&params, "recaptcha", fields["recaptcha"])
 	applyOrderedWamsysExcept(&params, capture, map[string]struct{}{"gpia": {}})
@@ -328,6 +330,7 @@ func nativeDeviceMapFields(state nativeState) map[string]string {
 	for key, value := range nativeDefaultDeviceMapFields() {
 		fields[key] = firstNonEmpty(fields[key], value)
 	}
+	applyNativePreChatdABDeviceFields(fields, state)
 	for key, value := range nativeRuntimeDeviceMapFields() {
 		fields[key] = value
 	}

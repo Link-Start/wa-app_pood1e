@@ -145,17 +145,24 @@ func (e *NativeEngine) applyRuntimeWamsys(
 	if err != nil {
 		return err
 	}
-	applyOpaqueWamsysMapParams(params, rawKeys, capture)
+	excluded := map[string]struct{}{}
+	if !nativeShouldSendRegistrationGPIA(state) {
+		excluded["gpia"] = struct{}{}
+	}
+	applyOpaqueWamsysMapParams(params, rawKeys, capture, excluded)
 	return nil
 }
 
-func applyOpaqueWamsysMapParams(params map[string]string, rawKeys map[string]struct{}, capture *waappv1.WamsysCapture) {
+func applyOpaqueWamsysMapParams(params map[string]string, rawKeys map[string]struct{}, capture *waappv1.WamsysCapture, excluded map[string]struct{}) {
 	if capture == nil {
 		return
 	}
 	for _, item := range capture.GetMapParams() {
 		key := item.GetKey()
 		if !isOpaqueWamsysMapKey(key) {
+			continue
+		}
+		if _, skip := excluded[key]; skip {
 			continue
 		}
 		params[key] = pctBytes(item.GetValue())

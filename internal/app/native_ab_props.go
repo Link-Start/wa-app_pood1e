@@ -16,6 +16,8 @@ type nativePreChatdABState struct {
 	NextFetchAtUnixMilli int64  `json:"next_fetch_at_unix_ms,omitempty"`
 }
 
+const nativeABPropSuccessRefreshDelay = time.Minute
+
 func (e *NativeEngine) refreshPreChatdABProps(ctx context.Context, phone *waappv1.PhoneTarget, state *nativeState, appVersion string) {
 	if e == nil || state == nil || !state.PreChatdAB.due(e.clock.Now()) {
 		return
@@ -28,13 +30,18 @@ func (e *NativeEngine) refreshPreChatdABProps(ctx context.Context, phone *waappv
 		return
 	}
 	state.PreChatdAB.applyResponse(result, now)
+	summary := nativePreChatdABLogSummary(*state)
 	log.Printf(
-		"wa_registration_abprop_status status=%s reason=%s has_hash=%t has_exp_cfg=%t retry_after_seconds=%d",
+		"wa_registration_abprop_status status=%s reason=%s has_hash=%t has_exp_cfg=%t retry_after_seconds=%d exp_cfg_count=%d gpia_enabled=%t sim_signal_enabled=%t recaptcha_stage=%s",
 		probeLogValue(responseStatus(result)),
 		probeLogValue(responseReason(result)),
 		strings.TrimSpace(state.PreChatdAB.Hash) != "",
 		strings.TrimSpace(state.PreChatdAB.ExpConfig) != "",
 		nativeABPropRetryAfterSeconds(result),
+		summary.ConfigCount,
+		summary.GPIAEnabled,
+		summary.SIMSignalEnabled,
+		summary.RecaptchaStage,
 	)
 }
 
@@ -73,7 +80,7 @@ func (s *nativePreChatdABState) applyResponse(data map[string]any, now time.Time
 		return
 	}
 	if responseStatus(data) == "ok" {
-		s.NextFetchAtUnixMilli = 0
+		s.scheduleRetry(now, nativeABPropSuccessRefreshDelay)
 	}
 }
 

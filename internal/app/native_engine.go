@@ -90,35 +90,36 @@ func (e *NativeEngine) ProbeAccount(ctx context.Context, input EngineRegistratio
 	if err != nil {
 		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}
 	}
-	return e.probeAccountWithState(ctx, input, state)
+	result, _ := e.probeAccountWithState(ctx, input, state)
+	return result
 }
 
-func (e *NativeEngine) probeAccountWithState(ctx context.Context, input EngineRegistrationInput, state nativeState) EngineProbeResult {
+func (e *NativeEngine) probeAccountWithState(ctx context.Context, input EngineRegistrationInput, state nativeState) (EngineProbeResult, nativeState) {
 	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
-		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}
+		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
 	e.refreshPreChatdABProps(ctx, input.Phone, &state, input.AppVersion)
 	params, rawKeys := e.existParams(input.Phone, state)
 	if err := e.applyRuntimeWamsys(ctx, waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST, input.Phone, state, params, rawKeys); err != nil {
-		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}
+		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
 	logNativeRegistrationMapShape("exist", input.Phone, input.DeliveryMethod, params, rawKeys)
 	plain := renderNativePlain(params, rawKeys)
 	client, err := e.httpForProxy()
 	if err != nil {
-		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}
+		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
 	data, _, err := client.postWASafe(ctx, defaultWAExistURL, plain, nativeUserAgentForState(state, input.AppVersion), state.Attestation)
 	result := parseExistProbeResult(data)
 	if err != nil {
 		if result.Err != nil || parsedExistApplicationOutcome(result) {
-			return result
+			return result, state
 		}
 		result.Status = waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED
 		result.AccountFlow = accountProbeFlowProbeFailed
 		result.Err = classifyHTTPError(data, err)
 	}
-	return result
+	return result, state
 }
 
 func parsedExistApplicationOutcome(result EngineProbeResult) bool {

@@ -89,7 +89,7 @@ func (s *Server) probeNumberSMSAttempt(ctx context.Context, payload map[string]a
 		"fingerprint_persistence": "RANDOM_NOT_COMMITTED",
 		"fingerprint":             fingerprintSummary(phoneProfileToProto(phone, state.Profile)),
 	}
-	probeResult := probeEngine.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone}, state)
+	probeResult, _ := probeEngine.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone}, state)
 	account := probeResultMap(probeResult)
 	sms := smsProbeMap(account)
 	result := buildNumberProbeResult(payload, proxy, fingerprint, account, sms)

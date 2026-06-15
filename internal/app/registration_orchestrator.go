@@ -44,7 +44,7 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 		_ = gateway.server.runtime.DeleteTransientState(context.Background(), fingerprintRef)
 	}()
 	phone := normalizePhone(phoneFromAction(basePayload))
-	probeResult := runner.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: method, AuthCodeContext: authCodeContext}, state)
+	probeResult, state := runner.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: method, AuthCodeContext: authCodeContext}, state)
 	logRegistrationProbeResult(basePayload, phone, route, method, probeResult)
 	if !registrationProbeAllowsMethod(probeResult, method) {
 		return rejectedRegistrationResult(basePayload, registrationProbeFailureMap(probeResult, route, managedRoute)), nil
