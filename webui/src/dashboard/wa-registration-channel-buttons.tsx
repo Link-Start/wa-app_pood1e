@@ -56,9 +56,6 @@ function channelMethods(status: WaProbeStatus | null) {
 
 function channelState(method: RegistrationChannelMethodOption, status: WaProbeStatus | null, elapsedSeconds: number) {
   if (!status) return { ready: false, cooldown: 0, label: '先检测', badge: 'outline' as const, Icon: CircleDashed, title: '先检测' };
-  if (status.blocked === true) {
-    return { ready: false, cooldown: 0, label: '封禁', badge: 'destructive' as const, Icon: XCircle, title: '号码封禁，通道不可用' };
-  }
   const cooldown = registrationMethodCooldownSeconds(status, method.value, elapsedSeconds);
   if (cooldown > 0) {
     return { ready: false, cooldown, label: countdownLabel(cooldown), badge: 'secondary' as const, Icon: Clock3, title: '冷却中' };
