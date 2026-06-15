@@ -74,13 +74,14 @@ func buildLocalWamsysGA(input wamsysMaterialInput) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []byte(fmt.Sprintf(
-		`{"bi":%q,"ap":%d,"ai":%d,"mp":false,"ae":%d,"mu":false}`,
-		bi,
-		nativeWamsysPathAgeSeconds(input, "source-dir"),
-		nativeWamsysPathAgeSeconds(input, "data-dir"),
-		nativeWamsysPathAgeSeconds(input, "external-files-dir"),
-	)), nil
+	return renderNativeGPIAJSONObject([]nativeGPIAJSONField{
+		{Key: "bi", Value: bi},
+		{Key: "ap", Value: nativeWamsysPathAgeSeconds(input, "source-dir")},
+		{Key: "ai", Value: nativeWamsysPathAgeSeconds(input, "data-dir")},
+		{Key: "mp", Value: false},
+		{Key: "ae", Value: nativeWamsysPathAgeSeconds(input, "external-files-dir")},
+		{Key: "mu", Value: false},
+	})
 }
 
 func nativeWamsysPathAgeSeconds(input wamsysMaterialInput, label string) int64 {
