@@ -263,7 +263,7 @@ func (e *NativeEngine) BuildRegistrationRequest(ctx context.Context, req *waappv
 	resp.Params = params.toProto(req.GetIncludeSensitiveValues())
 	resp.Plaintext = sensitiveOutput(plain, "registration-plaintext", req.GetIncludeSensitiveValues())
 	if req.GetEncryptRequest() {
-		if err := ensureNativeSoftwareAttestation(&state); err != nil {
+		if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
 			return nil, err
 		}
 		envelope, err := buildWASafeEnvelope([]byte(plain), defaultWASafeServerPublicKeyHex, state.Attestation)

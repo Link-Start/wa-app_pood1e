@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -319,15 +320,36 @@ func nativeDeviceMapFields(state nativeState) map[string]string {
 		if isOpaqueWamsysMapKey(key) {
 			continue
 		}
+		if isRuntimeNativeDeviceMapKey(key) {
+			continue
+		}
 		fields[key] = value
 	}
 	for key, value := range nativeDefaultDeviceMapFields() {
 		fields[key] = firstNonEmpty(fields[key], value)
 	}
+	for key, value := range nativeRuntimeDeviceMapFields() {
+		fields[key] = value
+	}
 	if fields["feo2_query_status"] == legacyNativeFeo2QueryStatus {
 		fields["feo2_query_status"] = nativeDefaultFeo2QueryStatus
 	}
 	return fields
+}
+
+func nativeRuntimeDeviceMapFields() map[string]string {
+	return map[string]string{
+		"pid": strconv.Itoa(os.Getpid()),
+	}
+}
+
+func isRuntimeNativeDeviceMapKey(key string) bool {
+	switch key {
+	case "pid":
+		return true
+	default:
+		return false
+	}
 }
 
 const (
@@ -341,7 +363,6 @@ func nativeDefaultDeviceMapFields() map[string]string {
 		"network_radio_type":    "1",
 		"mistyped":              "7",
 		"hasav":                 "2",
-		"pid":                   "29418",
 		"simnum":                "0",
 		"hasinrc":               "1",
 		"rc":                    "0",

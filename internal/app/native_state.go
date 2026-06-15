@@ -253,14 +253,6 @@ func newNativeState(phone *waappv1.PhoneTarget) (nativeState, error) {
 	if err != nil {
 		return nativeState{}, err
 	}
-	chatStaticPublic, err := chatStatic.publicBytes()
-	if err != nil {
-		return nativeState{}, err
-	}
-	attestation, err := newNativeSoftwareAttestation(chatStaticPublic, time.Now().UTC())
-	if err != nil {
-		return nativeState{}, err
-	}
 	identity, err := newNativeCurveKeyPair()
 	if err != nil {
 		return nativeState{}, err
@@ -307,7 +299,6 @@ func newNativeState(phone *waappv1.PhoneTarget) (nativeState, error) {
 		AuthKey:       chatStatic.Public,
 		Profile:       profile,
 		ChatStatic:    chatStatic,
-		Attestation:   attestation,
 		Signal: nativeSignalState{
 			RegistrationID:   regID,
 			Identity:         identity,
@@ -408,7 +399,6 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 	ram := model.MinRAMGiB + rng.Float64()*(model.MaxRAMGiB-model.MinRAMGiB)
 	additionalFields := map[string]string{
 		"network_radio_type":    nativeRandomRadioType(rng),
-		"pid":                   fmt.Sprintf("%d", 10000+rng.Intn(50000)),
 		"simnum":                simnum,
 		"hasinrc":               "1",
 		"rc":                    "0",
@@ -648,6 +638,16 @@ func normalizeNativePhoneProfile(profile nativePhoneProfile, userAgent string) n
 		Model:   profile.DeviceModel,
 		Android: profile.AndroidVersion,
 	}), device.BuildDisplayID)
+	if len(profile.AdditionalMapFields) > 0 {
+		fields := make(map[string]string, len(profile.AdditionalMapFields))
+		for key, value := range profile.AdditionalMapFields {
+			if isRuntimeNativeDeviceMapKey(key) {
+				continue
+			}
+			fields[key] = value
+		}
+		profile.AdditionalMapFields = fields
+	}
 	return profile
 }
 

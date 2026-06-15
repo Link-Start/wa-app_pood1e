@@ -25,7 +25,7 @@ const (
 
 type nativeGPIAMaterial struct {
 	Primary       string
-	TokenCompact  string
+	CodeCompact   string
 	DeviceCompact string
 }
 
@@ -50,7 +50,7 @@ func buildNativeGPIAErrorMaterial(input wamsysMaterialInput) (nativeGPIAMaterial
 	if err != nil {
 		return nativeGPIAMaterial{}, err
 	}
-	tokenCompact, err := encryptNativeGPIAJSON(keySource, []nativeGPIAJSONField{
+	codeCompact, err := encryptNativeGPIAJSON(keySource, []nativeGPIAJSONField{
 		{Key: "_ic", Value: nativeGPIAErrorCode},
 	})
 	if err != nil {
@@ -71,7 +71,7 @@ func buildNativeGPIAErrorMaterial(input wamsysMaterialInput) (nativeGPIAMaterial
 	if err != nil {
 		return nativeGPIAMaterial{}, err
 	}
-	return nativeGPIAMaterial{Primary: primary, TokenCompact: tokenCompact, DeviceCompact: deviceCompact}, nil
+	return nativeGPIAMaterial{Primary: primary, CodeCompact: codeCompact, DeviceCompact: deviceCompact}, nil
 }
 
 func nativeGPIADisplayID(state nativeState) string {

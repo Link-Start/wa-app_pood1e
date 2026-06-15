@@ -93,7 +93,7 @@ func (e *NativeEngine) ProbeAccount(ctx context.Context, input EngineRegistratio
 }
 
 func (e *NativeEngine) probeAccountWithState(ctx context.Context, input EngineRegistrationInput, state nativeState) EngineProbeResult {
-	if err := ensureNativeSoftwareAttestation(&state); err != nil {
+	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
 		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}
 	}
 	params, rawKeys := e.existParams(input.Phone, state)
@@ -138,7 +138,7 @@ func (e *NativeEngine) RequestVerificationCode(ctx context.Context, input Engine
 }
 
 func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, input EngineRegistrationInput, state nativeState) (EngineCodeResult, nativeState) {
-	if err := ensureNativeSoftwareAttestation(&state); err != nil {
+	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
 		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
 	}
 	state.nextGenerateCodeAttempt()
@@ -240,7 +240,7 @@ func (e *NativeEngine) SubmitVerificationCode(ctx context.Context, input EngineS
 	if err != nil {
 		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
 	}
-	if err := ensureNativeSoftwareAttestation(&state); err != nil {
+	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
 		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
 	}
 	code := strings.TrimSpace(input.Code)

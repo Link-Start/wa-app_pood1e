@@ -40,6 +40,8 @@ const (
 		nativeAttestationFirstIntermediateDER +
 		nativeAttestationSecondIntermediateDER +
 		nativeAttestationLeafDERLength
+	nativeAttestationFreshness  = 5 * time.Minute
+	nativeAttestationFutureSkew = 2 * time.Minute
 )
 
 func buildWASafeEnvelope(plain []byte, serverPublicKeyHex string, attestation nativeSoftwareAttestation) (waSafeEnvelope, error) {
@@ -58,18 +60,25 @@ func buildWASafeEnvelope(plain []byte, serverPublicKeyHex string, attestation na
 	return waSafeEnvelope{Body: body + "&H=" + signature, Enc: enc, Authorization: authorization}, nil
 }
 
-func ensureNativeSoftwareAttestation(state *nativeState) error {
+func ensureNativeSoftwareAttestation(state *nativeState, now time.Time) error {
 	if state == nil {
 		return nil
 	}
-	if state.Attestation.ready() && nativeAttestationChainShapeOK(state.Attestation.CertificateChainDER) {
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	if state.Attestation.ready() &&
+		nativeAttestationChainShapeOK(state.Attestation.CertificateChainDER) &&
+		state.Attestation.freshAt(now) {
 		return nil
 	}
 	challenge, err := nativeAttestationChallenge(*state)
 	if err != nil {
 		return err
 	}
-	attestation, err := newNativeSoftwareAttestation(challenge, time.Now().UTC())
+	attestation, err := newNativeSoftwareAttestation(challenge, now)
 	if err != nil {
 		return err
 	}
@@ -318,6 +327,49 @@ func nativeAttestationChainShapeOK(certificateChain string) bool {
 		return false
 	}
 	return strings.EqualFold(certificates[3].Subject.CommonName, "Android Keystore Key")
+}
+
+func (a nativeSoftwareAttestation) freshAt(now time.Time) bool {
+	issuedAt, ok := nativeAttestationIssuedAt(a.CertificateChainDER)
+	if !ok {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	} else {
+		now = now.UTC()
+	}
+	if issuedAt.After(now.Add(nativeAttestationFutureSkew)) {
+		return false
+	}
+	return !now.After(issuedAt.Add(nativeAttestationFreshness))
+}
+
+func nativeAttestationIssuedAt(certificateChain string) (time.Time, bool) {
+	certificateDER, err := decodeB64Any(certificateChain)
+	if err != nil {
+		return time.Time{}, false
+	}
+	certificates, err := x509.ParseCertificates(certificateDER)
+	if err != nil || len(certificates) == 0 {
+		return time.Time{}, false
+	}
+	leaf := certificates[len(certificates)-1]
+	for _, extension := range leaf.Extensions {
+		if extension.Id.String() != androidKeyAttestationOID.String() {
+			continue
+		}
+		var description nativeSoftwareAndroidKeyDescription
+		if _, err := asn1.Unmarshal(extension.Value, &description); err != nil {
+			return time.Time{}, false
+		}
+		challenge := description.AttestationChallenge
+		if len(challenge) < 9 || challenge[8] != 0x1f {
+			return time.Time{}, false
+		}
+		return time.Unix(int64(binary.BigEndian.Uint64(challenge[:8])), 0).UTC(), true
+	}
+	return time.Time{}, false
 }
 
 func (a nativeSoftwareAttestation) sign(body []byte) (string, string, error) {
