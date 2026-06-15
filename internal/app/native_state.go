@@ -447,6 +447,16 @@ func nativeRegistrationEphemeralID() string {
 	return pctBytes(randomBytes(20))
 }
 
+func nativeRegistrationRequestID(state nativeState) string {
+	if nativeShouldRandomizeRegistrationRequestID(state) {
+		return nativeRegistrationEphemeralID()
+	}
+	if id := strings.TrimSpace(state.Profile.ID); id != "" {
+		return id
+	}
+	return nativeRegistrationEphemeralID()
+}
+
 func nativeAdvertisingID(state nativeState) string {
 	if value := strings.TrimSpace(state.Profile.AdvertisingID); value != "" {
 		return value
