@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -93,11 +94,8 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	}
 	addOptionalRawParam(&params, "db", fields["db"])
 	addOptionalRawParam(&params, "recaptcha", fields["recaptcha"])
-	applyNativeCodeRequestRuntimeParams(&params, fields, methodName)
 	applyOrderedWamsysExcept(&params, capture, map[string]struct{}{"gpia": {}})
-	if methodName != "sms" {
-		addOptionalRawParam(&params, "feo2_query_status", fields["feo2_query_status"])
-	}
+	addOptionalRawParam(&params, "feo2_query_status", fields["feo2_query_status"])
 	return params, nil
 }
 
@@ -127,8 +125,8 @@ func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]st
 	if method == "sms" {
 		addOptionalRawParam(params, "mistyped", fields["mistyped"])
 		addRawParam(params, "client_metrics", nativeCodeClientMetrics(attempts))
+		applyNativeCodeRequestRuntimeParams(params, fields, method)
 		addOptionalRawParam(params, "device_ram", fields["device_ram"])
-		addOptionalRawParam(params, "feo2_query_status", fields["feo2_query_status"])
 		return
 	}
 	addOptionalRawParam(params, "mistyped", fields["mistyped"])
@@ -353,7 +351,7 @@ func nativeDeviceMapFields(state nativeState) map[string]string {
 		fields[key] = firstNonEmpty(fields[key], value)
 	}
 	applyNativePreChatdABDeviceFields(fields, state)
-	for key, value := range nativeRuntimeDeviceMapFields() {
+	for key, value := range nativeRuntimeDeviceMapFields(state) {
 		fields[key] = value
 	}
 	if fields["feo2_query_status"] == staleNativeFeo2QueryStatus {
@@ -362,9 +360,9 @@ func nativeDeviceMapFields(state nativeState) map[string]string {
 	return fields
 }
 
-func nativeRuntimeDeviceMapFields() map[string]string {
+func nativeRuntimeDeviceMapFields(state nativeState) map[string]string {
 	return map[string]string{
-		"pid": nativeRuntimeProcessID,
+		"pid": nativeRuntimeProcessID(state),
 	}
 }
 
@@ -377,12 +375,17 @@ func isRuntimeNativeDeviceMapKey(key string) bool {
 	}
 }
 
-var nativeRuntimeProcessID = newNativeRuntimeProcessID()
-
-func newNativeRuntimeProcessID() string {
-	raw := randomBytes(4)
-	value := binary.BigEndian.Uint32(raw)
-	return strconv.Itoa(10000 + int(value%50000))
+func nativeRuntimeProcessID(state nativeState) string {
+	seed := strings.Join([]string{
+		"byte-v-forge-wa-runtime-pid/v1",
+		state.Profile.PhoneSHA256,
+		state.Profile.FDID,
+		state.Profile.ExpIDUUID,
+		state.AuthKey,
+		strconv.FormatInt(state.CreatedAtUnix, 10),
+	}, "|")
+	sum := sha256.Sum256([]byte(seed))
+	return strconv.Itoa(1000 + int(binary.BigEndian.Uint32(sum[:4])%59000))
 }
 
 const (
