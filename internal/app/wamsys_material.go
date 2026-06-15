@@ -27,7 +27,7 @@ type wamsysMaterialProvider interface {
 type localWamsysMaterialProvider struct{}
 
 const (
-	nativeWamsysRequestedPermissionsDigest = "1bbWr/AUr6WSwyGsmoe87yQ5RmbmTY618LJF8aRYz5k="
+	nativeWamsysRequestedPermissionsDigest = "NNj5BoWX+yvZBYEY46Ze+Ad6Ykk0Z27FjgSysvkzzCU="
 	nativeWamsysPathAgeMinSeconds          = int64(1024)
 	nativeWamsysPathAgeSpreadSeconds       = uint64(4096)
 )
