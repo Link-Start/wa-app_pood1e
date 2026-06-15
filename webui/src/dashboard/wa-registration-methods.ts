@@ -18,7 +18,6 @@ export const selectableRegistrationMethods: SelectableRegistrationMethodOption[]
   methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_SMS, 'sms'),
   methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_VOICE, 'voice'),
   methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_WA_OLD, 'wa_old'),
-  methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER, 'acc_tr'),
   methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_EMAIL_OTP, 'email_otp'),
   methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_SEND_SMS, 'send_sms'),
 ];
@@ -38,7 +37,6 @@ export const apkSupportedLoginRegistrationMethods = [
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_SILENT_AUTH_TS43, 'silent_auth_ts_43'),
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_AUTOCONF, 'autoconf'),
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_DEEPLINK_OTP, 'deeplink_otp'),
-  loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_ACCOUNT_TRANSFER, 'acc_tr'),
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_PASSKEY, 'passkey'),
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_DISCOVERABLE_CREDENTIAL, 'discoverable_credential'),
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_OAUTH_EMAIL, 'oauth_email'),
