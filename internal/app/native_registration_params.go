@@ -24,7 +24,7 @@ func (e *NativeEngine) existParams(phone *waappv1.PhoneTarget, state nativeState
 		"fdid":              state.Profile.FDID,
 		"expid":             state.Profile.ExpID,
 		"access_session_id": state.Profile.AccessSessionID,
-		"id":                nativeRegistrationRequestID(state),
+		"id":                nativeRegistrationEphemeralID(),
 		"backup_token":      state.Profile.BackupToken,
 		"authkey":           state.AuthKey,
 		"e_ident":           state.KeyBundle.IdentityPublic,
@@ -67,7 +67,7 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	if state.Profile.AccessSessionID != "" {
 		params.set("access_session_id", state.Profile.AccessSessionID, false)
 	}
-	params.set("id", nativeRegistrationRequestID(state), true)
+	params.set("id", nativeRegistrationEphemeralID(), true)
 	params.set("backup_token", state.Profile.BackupToken, true)
 	if token := e.registrationToken(phone, state); token != "" {
 		params.set("token", token, false)

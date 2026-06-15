@@ -12,7 +12,6 @@ const (
 	nativeABCodeGPIA               = 3753
 	nativeABCodeSIMSignal          = 4435
 	nativeABCodeRecaptchaThreshold = 7343
-	nativeABCodeRandomRequestID    = 9463
 )
 
 type nativePreChatdABConfig struct {
@@ -24,7 +23,6 @@ type nativePreChatdABSummary struct {
 	GPIAEnabled      bool
 	SIMSignalEnabled bool
 	RecaptchaStage   string
-	RequestIDRandom  bool
 }
 
 func nativePreChatdABConfigs(state nativeState) map[int]nativePreChatdABConfig {
@@ -121,16 +119,11 @@ func nativePreChatdABLogSummary(state nativeState) nativePreChatdABSummary {
 		GPIAEnabled:      nativeABBoolFromConfigs(configs, nativeABCodeGPIA, true),
 		SIMSignalEnabled: nativeABBoolFromConfigs(configs, nativeABCodeSIMSignal, false),
 		RecaptchaStage:   nativeRecaptchaStage(state, configs),
-		RequestIDRandom:  nativeABBoolFromConfigs(configs, nativeABCodeRandomRequestID, false),
 	}
 }
 
 func nativeShouldSendRegistrationGPIA(state nativeState) bool {
 	return nativeABBoolFromConfigs(nativePreChatdABConfigs(state), nativeABCodeGPIA, true)
-}
-
-func nativeShouldRandomizeRegistrationRequestID(state nativeState) bool {
-	return nativeABBoolFromConfigs(nativePreChatdABConfigs(state), nativeABCodeRandomRequestID, false)
 }
 
 func applyNativePreChatdABDeviceFields(fields map[string]string, state nativeState) {

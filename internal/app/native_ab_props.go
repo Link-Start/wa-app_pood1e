@@ -32,7 +32,7 @@ func (e *NativeEngine) refreshPreChatdABProps(ctx context.Context, phone *waappv
 	state.PreChatdAB.applyResponse(result, now)
 	summary := nativePreChatdABLogSummary(*state)
 	log.Printf(
-		"wa_registration_abprop_status status=%s reason=%s has_hash=%t has_exp_cfg=%t retry_after_seconds=%d exp_cfg_count=%d gpia_enabled=%t sim_signal_enabled=%t recaptcha_stage=%s request_id_random=%t",
+		"wa_registration_abprop_status status=%s reason=%s has_hash=%t has_exp_cfg=%t retry_after_seconds=%d exp_cfg_count=%d gpia_enabled=%t sim_signal_enabled=%t recaptcha_stage=%s",
 		probeLogValue(responseStatus(result)),
 		probeLogValue(responseReason(result)),
 		strings.TrimSpace(state.PreChatdAB.Hash) != "",
@@ -42,7 +42,6 @@ func (e *NativeEngine) refreshPreChatdABProps(ctx context.Context, phone *waappv
 		summary.GPIAEnabled,
 		summary.SIMSignalEnabled,
 		summary.RecaptchaStage,
-		summary.RequestIDRandom,
 	)
 }
 
