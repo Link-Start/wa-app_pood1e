@@ -72,11 +72,11 @@ func buildLocalWamsysGA(input wamsysMaterialInput) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(fmt.Sprintf(
-		`{"bi":%q,"ap":%d,"ai":%d,"mp":false,"ae":%d,"mu":false}`,
-		bi,
-		nativeWamsysPathAgeSeconds(input, "source-dir"),
-		nativeWamsysPathAgeSeconds(input, "data-dir"),
+		`{"mu":false,"mp":false,"ae":%d,"ai":%d,"ap":%d,"bi":%q}`,
 		nativeWamsysPathAgeSeconds(input, "external-files-dir"),
+		nativeWamsysPathAgeSeconds(input, "data-dir"),
+		nativeWamsysPathAgeSeconds(input, "source-dir"),
+		bi,
 	)), nil
 }
 
