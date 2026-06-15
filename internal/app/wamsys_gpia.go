@@ -21,6 +21,7 @@ const (
 	nativeGPIAClassesDigest   = "qoblldcHz4lA84Sgs1QLZWPpd6YKG25zf0GwJZdTHXk="
 	nativeGPIANativeLibDigest = "G9McgxRaSjtq92o7zx0fbf3Ak7+SPmxxNyvNXS01hlM="
 	nativeGPIADataSODigest    = "0j9kw9djlCtmCCavV7go2wwge+2os853ubiE7F7Dew4="
+	nativeGPIASourceDirPath   = "/data/data/com.whatsapp/files/fixtures/original-app-release.apk"
 )
 
 type nativeGPIAMaterial struct {
@@ -81,15 +82,7 @@ func nativeGPIADisplayID(state nativeState) string {
 
 func nativeGPIASourceDir(input wamsysMaterialInput) string {
 	_ = input
-	return nativeGPIARuntimeSourceDir
-}
-
-var nativeGPIARuntimeSourceDir = newNativeGPIARuntimeSourceDir()
-
-func newNativeGPIARuntimeSourceDir() string {
-	first := base64.RawURLEncoding.EncodeToString(randomBytes(16))
-	second := base64.RawURLEncoding.EncodeToString(randomBytes(16))
-	return "/data/app/~~" + first + "==/com.whatsapp-" + second + "==/base.apk"
+	return nativeGPIASourceDirPath
 }
 
 func nativeGPIASHA256Base64(value []byte) string {
