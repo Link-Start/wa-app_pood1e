@@ -28,7 +28,8 @@ type localWamsysMaterialProvider struct{}
 
 const (
 	nativeWamsysRequestedPermissionsDigest = "1bbWr/AUr6WSwyGsmoe87yQ5RmbmTY618LJF8aRYz5k="
-	nativeWamsysPathStatusOK               = 0
+	nativeWamsysPathAgeMinSeconds          = int64(1024)
+	nativeWamsysPathAgeSpreadSeconds       = uint64(4096)
 )
 
 func (localWamsysMaterialProvider) RegistrationMaterial(ctx context.Context, input wamsysMaterialInput) (*waappv1.WamsysCapture, error) {
@@ -73,10 +74,54 @@ func buildLocalWamsysGA(input wamsysMaterialInput) ([]byte, error) {
 	return []byte(fmt.Sprintf(
 		`{"bi":%q,"ap":%d,"ai":%d,"mp":false,"ae":%d,"mu":false}`,
 		bi,
-		nativeWamsysPathStatusOK,
-		nativeWamsysPathStatusOK,
-		nativeWamsysPathStatusOK,
+		nativeWamsysPathAgeSeconds(input, "source-dir"),
+		nativeWamsysPathAgeSeconds(input, "data-dir"),
+		nativeWamsysPathAgeSeconds(input, "external-files-dir"),
 	)), nil
+}
+
+func nativeWamsysPathAgeSeconds(input wamsysMaterialInput, label string) int64 {
+	now := nativeWamsysNow(input)
+	createdAt := input.State.CreatedAtUnix
+	if createdAt <= 0 {
+		createdAt = input.State.Profile.CreatedAtUnix
+	}
+	if createdAt <= 0 || createdAt > now.Unix() {
+		createdAt = now.Unix()
+	}
+	virtualModifiedAt := createdAt - nativeWamsysPathInitialAgeSeconds(input, label)
+	return maxInt64(0, now.Unix()-virtualModifiedAt)
+}
+
+func nativeWamsysPathInitialAgeSeconds(input wamsysMaterialInput, label string) int64 {
+	profile := normalizeNativePhoneProfile(input.State.Profile, "")
+	seed := strings.Join([]string{
+		"byte-v-forge-wa-path-mtime/v1",
+		label,
+		phoneCC(input.Phone),
+		phoneNational(input.Phone),
+		input.State.Profile.PhoneSHA256,
+		profile.FDID,
+		profile.ExpIDUUID,
+		input.State.AuthKey,
+	}, "|")
+	sum := sha256.Sum256([]byte(seed))
+	return nativeWamsysPathAgeMinSeconds + int64(binary.BigEndian.Uint64(sum[:8])%nativeWamsysPathAgeSpreadSeconds)
+}
+
+func nativeWamsysNow(input wamsysMaterialInput) time.Time {
+	now := input.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	return now.UTC()
+}
+
+func maxInt64(left int64, right int64) int64 {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 func nativeWamsysBootID(input wamsysMaterialInput) string {
