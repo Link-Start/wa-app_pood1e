@@ -342,6 +342,7 @@ var nativeDeviceModels = []nativeDeviceModel{
 }
 
 var nativeOperators = map[string][][2]string{
+	"AR":   {{"722", "010"}, {"722", "020"}, {"722", "070"}, {"722", "310"}, {"722", "320"}, {"722", "330"}, {"722", "341"}},
 	"US":   {{"310", "260"}, {"310", "410"}, {"311", "480"}},
 	"CN":   {{"460", "00"}, {"460", "01"}, {"460", "11"}},
 	"PL":   {{"260", "01"}, {"260", "02"}, {"260", "06"}},
@@ -356,6 +357,8 @@ func nativeProfileCountry(phone *waappv1.PhoneTarget) string {
 	switch phoneCC(phone) {
 	case "1":
 		return "US"
+	case "54":
+		return "AR"
 	case "48":
 		return "PL"
 	case "84":
@@ -388,7 +391,7 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 	op := ops[rng.Intn(len(ops))]
 	simOp := ops[rng.Intn(len(ops))]
 	expIDUUID, expID := uuidPair()
-	accessUUID, _ := uuidPair()
+	accessUUID, accessID := uuidPair()
 	id := randomBytes(20)
 	backup := randomBytes(20)
 	phoneHash := sha256.Sum256([]byte(fullPhoneKey(phoneCC(phone), phoneNational(phone))))
@@ -428,7 +431,7 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 		FDID:                newUUIDString(),
 		ExpID:               expID,
 		ExpIDUUID:           expIDUUID,
-		AccessSessionID:     accessUUID,
+		AccessSessionID:     accessID,
 		AccessSessionIDUUID: accessUUID,
 		ID:                  pctBytes(id),
 		IDHex:               hex.EncodeToString(id),
@@ -662,18 +665,43 @@ func shouldNormalizeNativeAccessSessionID(profile nativePhoneProfile) bool {
 }
 
 func normalizeNativeAccessSessionID(profile nativePhoneProfile) nativePhoneProfile {
-	if isUUIDText(profile.AccessSessionID) {
-		profile.AccessSessionIDUUID = firstNonEmpty(profile.AccessSessionIDUUID, profile.AccessSessionID)
-		return profile
-	}
 	if isUUIDText(profile.AccessSessionIDUUID) {
-		profile.AccessSessionID = profile.AccessSessionIDUUID
+		profile.AccessSessionID = nativeUUIDTextToB64u(profile.AccessSessionIDUUID)
 		return profile
 	}
-	accessSessionID := newUUIDString()
+	if isUUIDText(profile.AccessSessionID) {
+		profile.AccessSessionIDUUID = profile.AccessSessionID
+		profile.AccessSessionID = nativeUUIDTextToB64u(profile.AccessSessionID)
+		return profile
+	}
+	if accessSessionIDUUID, ok := nativeUUIDB64uToText(profile.AccessSessionID); ok {
+		profile.AccessSessionIDUUID = accessSessionIDUUID
+		return profile
+	}
+	accessSessionIDUUID, accessSessionID := uuidPair()
 	profile.AccessSessionID = accessSessionID
-	profile.AccessSessionIDUUID = accessSessionID
+	profile.AccessSessionIDUUID = accessSessionIDUUID
 	return profile
+}
+
+func nativeUUIDTextToB64u(value string) string {
+	value = strings.TrimSpace(value)
+	if !isUUIDText(value) {
+		return ""
+	}
+	raw, err := hex.DecodeString(strings.ReplaceAll(value, "-", ""))
+	if err != nil || len(raw) != 16 {
+		return ""
+	}
+	return b64u(raw)
+}
+
+func nativeUUIDB64uToText(value string) (string, bool) {
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(value))
+	if err != nil || len(raw) != 16 {
+		return "", false
+	}
+	return fmt.Sprintf("%x-%x-%x-%x-%x", raw[0:4], raw[4:6], raw[6:8], raw[8:10], raw[10:]), true
 }
 
 func isUUIDText(value string) bool {
