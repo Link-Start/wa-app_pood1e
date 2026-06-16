@@ -132,6 +132,22 @@ func nativeWamsysStableOffset(input wamsysMaterialInput, label string, base int6
 	return base + int64(binary.BigEndian.Uint64(sum[:8])%spread)
 }
 
+func nativeStableRuntimeSeed(state nativeState, label string) string {
+	return strings.Join([]string{
+		"byte-v-forge-wa-native-runtime/v1",
+		strings.TrimSpace(label),
+		state.CC,
+		state.Phone,
+		state.Profile.PhoneSHA256,
+		state.Profile.FDID,
+		state.Profile.ExpIDUUID,
+		state.Profile.AccessSessionIDUUID,
+		state.AuthKey,
+		state.KeyBundle.IdentityPublic,
+		state.ChatStatic.Public,
+	}, "|")
+}
+
 func nativeWamsysNow(input wamsysMaterialInput) time.Time {
 	now := input.Now
 	if now.IsZero() {
@@ -148,14 +164,11 @@ func maxInt64(left int64, right int64) int64 {
 }
 
 func nativeWamsysBootID(input wamsysMaterialInput) string {
-	_ = input
-	return nativeRuntimeBootID
+	return nativeStableWamsysBootID(input.State)
 }
 
-var nativeRuntimeBootID = newNativeRuntimeBootID()
-
-func newNativeRuntimeBootID() string {
-	sum := randomBytes(16)
+func nativeStableWamsysBootID(state nativeState) string {
+	sum := sha256.Sum256([]byte(nativeStableRuntimeSeed(state, "boot-id")))
 	id := append([]byte(nil), sum[:16]...)
 	id[6] = (id[6] & 0x0f) | 0x40
 	id[8] = (id[8] & 0x3f) | 0x80
