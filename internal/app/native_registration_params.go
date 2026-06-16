@@ -85,7 +85,7 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 		}
 	}
 	applyNativeE2EParams(&params, state)
-	applyNativeCodeRequestMapParams(&params, fields, methodName, attempts)
+	applyNativeCodeRequestMapParams(&params, fields, methodName, attempts, nativeCodeRequestReason(state))
 	var capture *waappv1.WamsysCapture
 	if includeWamsys {
 		var err error
@@ -126,10 +126,10 @@ func applyNativeE2EParams(params *orderedParams, state nativeState) {
 	params.set("e_skey_sig", state.KeyBundle.SignedKeySig, false)
 }
 
-func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]string, method string, attempts int) {
+func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]string, method string, attempts int, reason string) {
 	if method == "sms" {
 		addOptionalRawParam(params, "mistyped", fields["mistyped"])
-		addRawParam(params, "reason", "")
+		addRawParam(params, "reason", reason)
 		addOptionalRawParam(params, "hasav", fields["hasav"])
 		addRawParam(params, "client_metrics", nativeCodeClientMetrics(attempts))
 		addOptionalRawParam(params, "mcc", fields["mcc"])
@@ -143,7 +143,7 @@ func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]st
 		return
 	}
 	addOptionalRawParam(params, "mistyped", fields["mistyped"])
-	addRawParam(params, "reason", "")
+	addRawParam(params, "reason", reason)
 	addOptionalRawParam(params, "hasav", fields["hasav"])
 	addRawParam(params, "client_metrics", nativeCodeClientMetrics(attempts))
 	addOptionalRawParam(params, "mcc", fields["mcc"])
@@ -291,7 +291,7 @@ func applyNativeRawParamMap(params map[string]string, raw map[string]struct{}, v
 func codeDeviceMap(method string, state nativeState) map[string]string {
 	fields := nativeDeviceMapFields(state)
 	out := map[string]string{
-		"reason":                     "",
+		"reason":                     nativeCodeRequestReason(state),
 		"client_metrics":             nativeCodeClientMetrics(nativeCodeRequestAttempts(state)),
 		"education_screen_displayed": "false",
 		"prefer_sms_over_flash":      nativePreferSMSOverFlash(method, fields),
@@ -400,7 +400,7 @@ func nativeRuntimeProcessID(state nativeState) string {
 }
 
 const (
-	nativeDefaultFeo2QueryStatus   = "did_not_query"
+	nativeDefaultFeo2QueryStatus   = "error_security_exception"
 	nativeDefaultDebugBridgeStatus = "1"
 )
 
@@ -456,6 +456,18 @@ func nativeCodeRequestAttemptsFromLastParams(params map[string]string) int {
 		return 0
 	}
 	return payload.Attempts
+}
+
+func nativeCodeRequestReason(state nativeState) string {
+	if len(state.LastCodeResult) == 0 {
+		return ""
+	}
+	switch responseStatus(state.LastCodeResult) {
+	case "", "sent", "ok":
+		return ""
+	default:
+		return "server-send-request-error-unspecified"
+	}
 }
 
 func nativeCodeClientMetricAttempts(attempts int) int {
