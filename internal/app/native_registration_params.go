@@ -84,7 +84,6 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 			params.set("advertising_id", advertisingID, false)
 		}
 	}
-	params.set("type", nativeRegistrationUserTypePhoneNumber, false)
 	applyNativeE2EParams(&params, state)
 	applyNativeCodeRequestMapParams(&params, fields, methodName, attempts)
 	var capture *waappv1.WamsysCapture
@@ -368,21 +367,19 @@ func nativeDeviceMapFields(state nativeState) map[string]string {
 	for key, value := range nativeRuntimeDeviceMapFields(state) {
 		fields[key] = value
 	}
-	if fields["feo2_query_status"] == staleNativeFeo2QueryStatus {
-		fields["feo2_query_status"] = nativeDefaultFeo2QueryStatus
-	}
 	return fields
 }
 
 func nativeRuntimeDeviceMapFields(state nativeState) map[string]string {
 	return map[string]string{
-		"pid": nativeRuntimeProcessID(state),
+		"pid":               nativeRuntimeProcessID(state),
+		"feo2_query_status": nativeDefaultFeo2QueryStatus,
 	}
 }
 
 func isRuntimeNativeDeviceMapKey(key string) bool {
 	switch key {
-	case "pid":
+	case "pid", "feo2_query_status":
 		return true
 	default:
 		return false
@@ -403,8 +400,7 @@ func nativeRuntimeProcessID(state nativeState) string {
 }
 
 const (
-	nativeDefaultFeo2QueryStatus   = "error_security_exception"
-	staleNativeFeo2QueryStatus     = "did_not_query"
+	nativeDefaultFeo2QueryStatus   = "did_not_query"
 	nativeDefaultDebugBridgeStatus = "1"
 )
 
@@ -507,7 +503,6 @@ func nativeCodeEntryMethod(method string) string {
 }
 
 const nativeDefaultAppCampaignDownloadSource = "unknown|unknown"
-const nativeRegistrationUserTypePhoneNumber = "0"
 
 const defaultRegistrationTokenHMACKeyHex = "44539b934347b6f12609296e69145b58309df94ed0a8a5a2d94078a8eaff87013e3d95a69644aa1b924646532c279f8bcd2855ab55f2c8bc1693adb7800c88ff"
 
