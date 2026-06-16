@@ -151,6 +151,7 @@ func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]st
 	addOptionalRawParam(params, "hasinrc", fields["hasinrc"])
 	addOptionalRawParam(params, "pid", fields["pid"])
 	addOptionalRawParam(params, "rc", fields["rc"])
+	applyNativeCodeRequestSIMSignalParams(params, fields)
 	addOptionalRawParam(params, "device_ram", fields["device_ram"])
 }
 
@@ -163,6 +164,14 @@ func applyNativeCodeRequestRuntimeParams(params *orderedParams, fields map[strin
 	addOptionalRawParam(params, "hasinrc", fields["hasinrc"])
 	addOptionalRawParam(params, "pid", fields["pid"])
 	addOptionalRawParam(params, "rc", fields["rc"])
+	applyNativeCodeRequestSIMSignalParams(params, fields)
+}
+
+func applyNativeCodeRequestSIMSignalParams(params *orderedParams, fields map[string]string) {
+	addOptionalRawParam(params, "sim_type", fields["sim_type"])
+	addOptionalRawParam(params, "airplane_mode_type", fields["airplane_mode_type"])
+	addOptionalRawParam(params, "cellular_strength", fields["cellular_strength"])
+	addOptionalRawParam(params, "roaming_type", fields["roaming_type"])
 }
 
 func addOptionalRawParam(params *orderedParams, key string, value string) {
