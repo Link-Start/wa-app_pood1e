@@ -95,6 +95,7 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	addOptionalRawParam(&params, "db", fields["db"])
 	addOptionalRawParam(&params, "recaptcha", fields["recaptcha"])
 	applyOrderedWamsysExcept(&params, capture, map[string]struct{}{"gpia": {}})
+	addOptionalRawParam(&params, "feo2_query_status", fields["feo2_query_status"])
 	return params, nil
 }
 
