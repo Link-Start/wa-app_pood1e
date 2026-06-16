@@ -19,6 +19,8 @@ const (
 	defaultWAExistURL    = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/exist&"
 	defaultWACodeURL     = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/code&"
 	defaultWARegisterURL = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/register&"
+
+	nativeDefaultSMSCodeLength int32 = 6
 )
 
 var nativeSensitiveDigitsPattern = regexp.MustCompile(`\b[0-9]{4,8}\b`)
@@ -182,10 +184,13 @@ func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, inp
 	}
 	status := waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_WAITING
 	s := responseStatus(data)
+	deliverySideEffect := false
 	if s == "sent" || s == "ok" {
 		status = waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_SENT
 	} else if verificationCodeRateLimited(data) {
 		return verificationCodeRejectedResult(data, input.DeliveryMethod, now, retryAfter, "verification request is cooling down"), state
+	} else if verificationCodeNoRoutesDeliverySideEffect(data, input.DeliveryMethod, retryAfter) {
+		deliverySideEffect = true
 	} else if s != "" {
 		return EngineCodeResult{
 			Status:         waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED,
@@ -197,6 +202,9 @@ func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, inp
 		}, state
 	}
 	result := verificationCodeResult(status, data, input.DeliveryMethod, now, retryAfter)
+	if deliverySideEffect && result.ExpectedCodeLength == 0 {
+		result.ExpectedCodeLength = nativeDefaultSMSCodeLength
+	}
 	if input.DeliveryMethod == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER {
 		challenge, challengeErr := e.prepareAccountTransferChallenge(input.Phone, &state, data, now)
 		if challengeErr != nil {
@@ -849,6 +857,19 @@ func verificationCodeRateLimited(data map[string]any) bool {
 	default:
 		return false
 	}
+}
+
+func verificationCodeNoRoutesDeliverySideEffect(data map[string]any, method waappv1.VerificationDeliveryMethod, retryAfter time.Duration) bool {
+	if registrationMethodName(method, "sms") != "sms" {
+		return false
+	}
+	if responseStatus(data) != "fail" || responseReason(data) != "no_routes" {
+		return false
+	}
+	if retryAfter > 0 {
+		return true
+	}
+	return verificationMethodWaitStatus(data, "sms", true).Seconds > 0
 }
 
 func verificationCodeRetryAfter(data map[string]any, method waappv1.VerificationDeliveryMethod) time.Duration {
