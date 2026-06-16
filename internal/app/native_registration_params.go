@@ -79,11 +79,6 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 			params.set("context", contextValue, false)
 		}
 	}
-	if nativeRegistrationMethodUsesAdvertisingID(methodName) && shouldSendNativeAdvertisingID(phone) {
-		if advertisingID := nativeAdvertisingID(state); advertisingID != "" {
-			params.set("advertising_id", advertisingID, false)
-		}
-	}
 	applyNativeE2EParams(&params, state)
 	applyNativeCodeRequestMapParams(&params, fields, methodName, attempts, nativeCodeRequestReason(state))
 	var capture *waappv1.WamsysCapture
@@ -109,10 +104,6 @@ func nativeRegistrationMethodUsesToken(methodName string) bool {
 }
 
 func nativeRegistrationMethodUsesAuthContext(methodName string) bool {
-	return methodName != "acc_tr"
-}
-
-func nativeRegistrationMethodUsesAdvertisingID(methodName string) bool {
 	return methodName != "acc_tr"
 }
 
@@ -1176,20 +1167,4 @@ func jsonValuePresent(value any) bool {
 		return strings.TrimSpace(text) != ""
 	}
 	return true
-}
-
-func shouldSendNativeAdvertisingID(phone *waappv1.PhoneTarget) bool {
-	country := strings.ToUpper(strings.TrimSpace(phone.GetCountryIso2()))
-	if country == "" {
-		return true
-	}
-	_, blocked := nativeAdvertisingIDSuppressedCountries[country]
-	return !blocked
-}
-
-var nativeAdvertisingIDSuppressedCountries = map[string]struct{}{
-	"AT": {}, "BE": {}, "BG": {}, "CY": {}, "CZ": {}, "DE": {}, "DK": {}, "EE": {},
-	"ES": {}, "FI": {}, "FR": {}, "GR": {}, "HR": {}, "HU": {}, "IE": {}, "IT": {},
-	"LT": {}, "LU": {}, "LV": {}, "MT": {}, "NL": {}, "PL": {}, "PT": {}, "RO": {},
-	"SE": {}, "SI": {}, "SK": {},
 }
