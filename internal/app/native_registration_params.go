@@ -147,10 +147,6 @@ func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]st
 	addOptionalRawParam(params, "hasinrc", fields["hasinrc"])
 	addOptionalRawParam(params, "pid", fields["pid"])
 	addOptionalRawParam(params, "rc", fields["rc"])
-	addOptionalRawParam(params, "sim_type", fields["sim_type"])
-	addOptionalRawParam(params, "airplane_mode_type", fields["airplane_mode_type"])
-	addOptionalRawParam(params, "cellular_strength", fields["cellular_strength"])
-	addOptionalRawParam(params, "roaming_type", fields["roaming_type"])
 	addOptionalRawParam(params, "device_ram", fields["device_ram"])
 }
 
@@ -163,10 +159,6 @@ func applyNativeCodeRequestRuntimeParams(params *orderedParams, fields map[strin
 	addOptionalRawParam(params, "hasinrc", fields["hasinrc"])
 	addOptionalRawParam(params, "pid", fields["pid"])
 	addOptionalRawParam(params, "rc", fields["rc"])
-	addOptionalRawParam(params, "sim_type", fields["sim_type"])
-	addOptionalRawParam(params, "airplane_mode_type", fields["airplane_mode_type"])
-	addOptionalRawParam(params, "cellular_strength", fields["cellular_strength"])
-	addOptionalRawParam(params, "roaming_type", fields["roaming_type"])
 }
 
 func addOptionalRawParam(params *orderedParams, key string, value string) {
@@ -300,10 +292,6 @@ func codeDeviceMap(method string, state nativeState) map[string]string {
 	}
 	addNonEmptyNativeCodeField(out, fields, "mistyped")
 	addNonEmptyNativeCodeField(out, fields, "hasav")
-	addNonEmptyNativeCodeField(out, fields, "sim_type")
-	addNonEmptyNativeCodeField(out, fields, "airplane_mode_type")
-	addNonEmptyNativeCodeField(out, fields, "cellular_strength")
-	addNonEmptyNativeCodeField(out, fields, "roaming_type")
 	return out
 }
 
@@ -401,10 +389,6 @@ func nativeDefaultDeviceMapFields() map[string]string {
 		"simnum":                "0",
 		"hasinrc":               "1",
 		"rc":                    "0",
-		"sim_type":              "0",
-		"airplane_mode_type":    "0",
-		"cellular_strength":     "5",
-		"roaming_type":          "0",
 		"device_ram":            "11.24",
 		"db":                    nativeDefaultDebugBridgeStatus,
 		"recaptcha":             `{"stage":"ABPROP_DISABLED"}`,
