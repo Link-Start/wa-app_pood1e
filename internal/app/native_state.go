@@ -518,8 +518,9 @@ func stableParamOrder(params map[string]string) []string {
 		"sim_mcc", "sim_mnc", "education_screen_displayed", "prefer_sms_over_flash",
 		"network_radio_type", "simnum", "hasinrc", "pid", "rc",
 		"sim_type", "airplane_mode_type", "cellular_strength", "roaming_type",
-		"device_ram", "gpia",
-		"db", "recaptcha", "_ga", "_gi", "_gp", "_ge", "aid", "_gg",
+		"push_code", "new_acc_uuid", "old_phone_number", "device_ram", "gpia",
+		"db", "recaptcha", "fid", "preloads_app_manager_id", "preloads_attribution",
+		"tos_version", "entrypoint", "cred_token", "_ga", "_gi", "_gp", "_ge", "aid", "_gg",
 		"feo2_query_status", "is_foa_fdid_app_installed", "language_selector_time_spent",
 		"language_selector_clicked_count",
 	}

@@ -97,6 +97,7 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	}
 	addOptionalRawParam(&params, "db", fields["db"])
 	addOptionalRawParam(&params, "recaptcha", fields["recaptcha"])
+	applyNativeCodeRequestOptionalTailParams(&params, fields)
 	applyOrderedWamsysExcept(&params, capture, map[string]struct{}{"gpia": {}})
 	addOptionalRawParam(&params, "feo2_query_status", fields["feo2_query_status"])
 	return params, nil
@@ -133,6 +134,8 @@ func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]st
 		addRawParam(params, "education_screen_displayed", "false")
 		addRawParam(params, "prefer_sms_over_flash", nativePreferSMSOverFlash(method, fields))
 		applyNativeCodeRequestRuntimeParams(params, fields, method)
+		applyNativeCodeRequestStoredParams(params, fields)
+		addOptionalRawParam(params, "old_phone_number", fields["old_phone_number"])
 		addOptionalRawParam(params, "device_ram", fields["device_ram"])
 		return
 	}
@@ -152,6 +155,8 @@ func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]st
 	addOptionalRawParam(params, "pid", fields["pid"])
 	addOptionalRawParam(params, "rc", fields["rc"])
 	applyNativeCodeRequestSIMSignalParams(params, fields)
+	applyNativeCodeRequestStoredParams(params, fields)
+	addOptionalRawParam(params, "old_phone_number", fields["old_phone_number"])
 	addOptionalRawParam(params, "device_ram", fields["device_ram"])
 }
 
@@ -172,6 +177,20 @@ func applyNativeCodeRequestSIMSignalParams(params *orderedParams, fields map[str
 	addOptionalRawParam(params, "airplane_mode_type", fields["airplane_mode_type"])
 	addOptionalRawParam(params, "cellular_strength", fields["cellular_strength"])
 	addOptionalRawParam(params, "roaming_type", fields["roaming_type"])
+}
+
+func applyNativeCodeRequestStoredParams(params *orderedParams, fields map[string]string) {
+	addOptionalRawParam(params, "push_code", fields["push_code"])
+	addOptionalRawParam(params, "new_acc_uuid", fields["new_acc_uuid"])
+}
+
+func applyNativeCodeRequestOptionalTailParams(params *orderedParams, fields map[string]string) {
+	addOptionalRawParam(params, "fid", fields["fid"])
+	addOptionalRawParam(params, "preloads_app_manager_id", fields["preloads_app_manager_id"])
+	addOptionalRawParam(params, "preloads_attribution", fields["preloads_attribution"])
+	addOptionalRawParam(params, "tos_version", fields["tos_version"])
+	addOptionalRawParam(params, "entrypoint", fields["entrypoint"])
+	addOptionalRawParam(params, "cred_token", fields["cred_token"])
 }
 
 func addOptionalRawParam(params *orderedParams, key string, value string) {
@@ -305,6 +324,13 @@ func codeDeviceMap(method string, state nativeState) map[string]string {
 	}
 	addNonEmptyNativeCodeField(out, fields, "mistyped")
 	addNonEmptyNativeCodeField(out, fields, "hasav")
+	for _, key := range []string{
+		"sim_type", "airplane_mode_type", "cellular_strength", "roaming_type",
+		"push_code", "new_acc_uuid", "old_phone_number", "fid", "preloads_app_manager_id",
+		"preloads_attribution", "tos_version", "entrypoint", "cred_token",
+	} {
+		addNonEmptyNativeCodeField(out, fields, key)
+	}
 	return out
 }
 

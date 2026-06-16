@@ -110,7 +110,9 @@ func shouldLogRegistrationValueHash(key string) bool {
 		"mistyped", "reason", "hasav", "client_metrics", "mcc", "mnc", "sim_mcc", "sim_mnc",
 		"education_screen_displayed", "prefer_sms_over_flash", "network_radio_type", "simnum",
 		"hasinrc", "pid", "rc", "sim_type", "airplane_mode_type", "cellular_strength",
-		"roaming_type", "device_ram", "db", "recaptcha", "feo2_query_status",
+		"roaming_type", "push_code", "new_acc_uuid", "old_phone_number", "device_ram", "db", "recaptcha",
+		"fid", "preloads_app_manager_id", "preloads_attribution", "tos_version", "entrypoint",
+		"cred_token", "feo2_query_status",
 		"ab_hash", "gpia", "_ge", "_gi", "_gg", "_gp", "_ga", "_hp", "aid":
 		return true
 	default:
