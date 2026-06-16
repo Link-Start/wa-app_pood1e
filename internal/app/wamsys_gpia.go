@@ -16,11 +16,11 @@ const (
 	nativeGPIAErrorCode       = -9
 	nativeGPIAPackageName     = "com.whatsapp"
 	nativeGPIASourceSize      = "141711087"
-	nativeGPIASourceDigest    = "vJrNuYDSuWUZ87O1W5+xs/2g74mwPA2JO+dkqjlJZG4="
+	nativeGPIASourceDigest    = "b3BumN//vPO0GypN5i+xXvNznZyGiXOT99Jip70omCg="
 	nativeGPIACertDigest      = "OKD31QX+GP7GT780Psqq8xDb15k="
 	nativeGPIAClassesDigest   = "qoblldcHz4lA84Sgs1QLZWPpd6YKG25zf0GwJZdTHXk="
 	nativeGPIANativeLibDigest = "G9McgxRaSjtq92o7zx0fbf3Ak7+SPmxxNyvNXS01hlM="
-	nativeGPIADataSODigest    = "0j9kw9djlCtmCCavV7go2wwge+2os853ubiE7F7Dew4="
+	nativeGPIADataSODigest    = "SrL/HHWX9VAinH9OV4eloGSQLWSsUug93h5YGGad17s="
 )
 
 type nativeGPIAMaterial struct {
