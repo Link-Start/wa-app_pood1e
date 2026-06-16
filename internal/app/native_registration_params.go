@@ -387,7 +387,7 @@ func nativeRuntimeProcessID(state nativeState) string {
 		strconv.FormatInt(state.CreatedAtUnix, 10),
 	}, "|")
 	sum := sha256.Sum256([]byte(seed))
-	return strconv.Itoa(1000 + int(binary.BigEndian.Uint32(sum[:4])%59000))
+	return strconv.Itoa(10000 + int(binary.BigEndian.Uint32(sum[:4])%50000))
 }
 
 const (
