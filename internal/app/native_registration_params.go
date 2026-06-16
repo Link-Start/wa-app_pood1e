@@ -378,7 +378,7 @@ func nativeRuntimeProcessID(state nativeState) string {
 }
 
 const (
-	nativeDefaultFeo2QueryStatus   = "error_security_exception"
+	nativeDefaultFeo2QueryStatus   = "did_not_query"
 	nativeDefaultDebugBridgeStatus = "1"
 )
 
