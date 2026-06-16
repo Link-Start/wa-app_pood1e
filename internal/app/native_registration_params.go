@@ -412,6 +412,10 @@ func nativeDefaultDeviceMapFields() map[string]string {
 		"simnum":                "0",
 		"hasinrc":               "1",
 		"rc":                    "0",
+		"sim_type":              "0",
+		"airplane_mode_type":    "0",
+		"cellular_strength":     "5",
+		"roaming_type":          "0",
 		"device_ram":            "11.24",
 		"db":                    nativeDefaultDebugBridgeStatus,
 		"recaptcha":             `{"stage":"ABPROP_DISABLED"}`,
@@ -481,14 +485,12 @@ func nativeCodeClientMetrics(attempts int) string {
 	body, err := json.Marshal(struct {
 		Attempts                  int    `json:"attempts"`
 		AppCampaignDownloadSource string `json:"app_campaign_download_source"`
-		WasActivatedFromStub      bool   `json:"was_activated_from_stub"`
 	}{
 		Attempts:                  nativeCodeClientMetricAttempts(attempts),
 		AppCampaignDownloadSource: nativeDefaultAppCampaignDownloadSource,
-		WasActivatedFromStub:      false,
 	})
 	if err != nil {
-		return `{"attempts":1,"app_campaign_download_source":"unknown|unknown","was_activated_from_stub":false}`
+		return `{"attempts":1,"app_campaign_download_source":"unknown|unknown"}`
 	}
 	return string(body)
 }
