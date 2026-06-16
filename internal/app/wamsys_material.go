@@ -74,18 +74,22 @@ func buildLocalWamsysCapture(input wamsysMaterialInput) (*waappv1.WamsysCapture,
 }
 
 func buildLocalWamsysGA(input wamsysMaterialInput) ([]byte, error) {
-	bi, err := encryptNativeGPIAData(nativeGPIAKeySource(input.State), []byte(nativeWamsysBootID(input)))
+	keySource := nativeGPIAKeySource(input.State)
+	bootID := nativeWamsysBootID(input)
+	bi, err := encryptNativeGPIAData(keySource, []byte(bootID))
 	if err != nil {
 		return nil, err
 	}
-	return renderNativeGPIAJSONObject([]nativeGPIAJSONField{
+	fields := []nativeGPIAJSONField{
 		{Key: "bi", Value: bi},
 		{Key: "ap", Value: nativeWamsysPathAgeSeconds(input, "source-dir")},
 		{Key: "ai", Value: nativeWamsysPathAgeSeconds(input, "data-dir")},
 		{Key: "mp", Value: false},
 		{Key: "ae", Value: nativeWamsysPathAgeSeconds(input, "external-files-dir")},
 		{Key: "mu", Value: false},
-	})
+	}
+	logNativeWamsysGAPlaintextShape(input, keySource, bootID, fields)
+	return renderNativeGPIAJSONObject(fields)
 }
 
 func nativeWamsysPathAgeSeconds(input wamsysMaterialInput, label string) int64 {

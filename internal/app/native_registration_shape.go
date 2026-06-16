@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/url"
 	"strconv"
@@ -158,5 +159,110 @@ func logNativeRegistrationWamsysGAShape(kind string, phoneHash string, method wa
 			shape.MultiUser,
 		)
 		return
+	}
+}
+
+func logNativeGPIAPlaintextShape(input wamsysMaterialInput, label string, keySource string, fields []nativeGPIAJSONField) {
+	plaintext, err := renderNativeGPIAJSONObject(fields)
+	if err != nil {
+		log.Printf(
+			"wa_registration_gpia_plaintext_shape kind=%s phone_hash=%s label=%s error=%s",
+			probeLogValue(registrationRequestKindName(input.Kind)),
+			wamsysInputPhoneHash(input),
+			probeLogValue(label),
+			probeLogValue(err.Error()),
+		)
+		return
+	}
+	log.Printf(
+		"wa_registration_gpia_plaintext_shape kind=%s phone_hash=%s label=%s key_source_len=%d key_source_hash=%s json_len=%d json_hash=%s keys=%s fields=%s",
+		probeLogValue(registrationRequestKindName(input.Kind)),
+		wamsysInputPhoneHash(input),
+		probeLogValue(label),
+		len([]byte(keySource)),
+		stableID(keySource),
+		len(plaintext),
+		stableID(string(plaintext)),
+		probeLogValue(nativeGPIAFieldKeys(fields)),
+		probeLogValue(nativeGPIAFieldShapes(fields)),
+	)
+}
+
+func logNativeWamsysGAPlaintextShape(input wamsysMaterialInput, keySource string, bootID string, fields []nativeGPIAJSONField) {
+	plaintext, err := renderNativeGPIAJSONObject(fields)
+	if err != nil {
+		log.Printf(
+			"wa_registration_wamsys_ga_plaintext_shape kind=%s phone_hash=%s error=%s",
+			probeLogValue(registrationRequestKindName(input.Kind)),
+			wamsysInputPhoneHash(input),
+			probeLogValue(err.Error()),
+		)
+		return
+	}
+	log.Printf(
+		"wa_registration_wamsys_ga_plaintext_shape kind=%s phone_hash=%s key_source_len=%d key_source_hash=%s boot_id_len=%d boot_id_hash=%s json_len=%d json_hash=%s keys=%s fields=%s",
+		probeLogValue(registrationRequestKindName(input.Kind)),
+		wamsysInputPhoneHash(input),
+		len([]byte(keySource)),
+		stableID(keySource),
+		len([]byte(bootID)),
+		stableID(bootID),
+		len(plaintext),
+		stableID(string(plaintext)),
+		probeLogValue(nativeGPIAFieldKeys(fields)),
+		probeLogValue(nativeGPIAFieldShapes(fields)),
+	)
+}
+
+func nativeGPIAFieldKeys(fields []nativeGPIAJSONField) string {
+	keys := make([]string, 0, len(fields))
+	for _, field := range fields {
+		keys = append(keys, field.Key)
+	}
+	return strings.Join(keys, "|")
+}
+
+func nativeGPIAFieldShapes(fields []nativeGPIAJSONField) string {
+	parts := make([]string, 0, len(fields))
+	for _, field := range fields {
+		parts = append(parts, nativeGPIAFieldShape(field))
+	}
+	return strings.Join(parts, ",")
+}
+
+func nativeGPIAFieldShape(field nativeGPIAJSONField) string {
+	switch value := field.Value.(type) {
+	case string:
+		return field.Key + ":string:" + strconv.Itoa(len([]byte(value))) + ":" + stableID(value)
+	case int:
+		return field.Key + ":number:int:" + strconv.Itoa(value)
+	case int64:
+		return field.Key + ":number:int:" + strconv.FormatInt(value, 10)
+	case bool:
+		return field.Key + ":bool:" + strconv.FormatBool(value)
+	case nil:
+		return field.Key + ":null"
+	default:
+		return field.Key + ":type:" + probeLogValue(strconv.Quote(fmt.Sprintf("%T", value)))
+	}
+}
+
+func wamsysInputPhoneHash(input wamsysMaterialInput) string {
+	if input.Phone != nil && input.Phone.GetE164Number() != "" {
+		return stableID(input.Phone.GetE164Number())
+	}
+	return ""
+}
+
+func registrationRequestKindName(kind waappv1.RegistrationRequestKind) string {
+	switch kind {
+	case waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST:
+		return "exist"
+	case waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_CODE:
+		return "code"
+	case waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_REGISTER:
+		return "register"
+	default:
+		return kind.String()
 	}
 }
