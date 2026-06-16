@@ -84,6 +84,7 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 			params.set("advertising_id", advertisingID, false)
 		}
 	}
+	params.set("type", nativeRegistrationUserTypePhoneNumber, false)
 	applyNativeE2EParams(&params, state)
 	applyNativeCodeRequestMapParams(&params, fields, methodName, attempts)
 	var capture *waappv1.WamsysCapture
@@ -506,6 +507,7 @@ func nativeCodeEntryMethod(method string) string {
 }
 
 const nativeDefaultAppCampaignDownloadSource = "unknown|unknown"
+const nativeRegistrationUserTypePhoneNumber = "0"
 
 const defaultRegistrationTokenHMACKeyHex = "44539b934347b6f12609296e69145b58309df94ed0a8a5a2d94078a8eaff87013e3d95a69644aa1b924646532c279f8bcd2855ab55f2c8bc1693adb7800c88ff"
 

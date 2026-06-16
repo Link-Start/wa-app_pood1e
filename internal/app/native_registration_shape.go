@@ -104,7 +104,7 @@ func registrationHashValue(value string, raw bool) string {
 
 func shouldLogRegistrationValueHash(key string) bool {
 	switch key {
-	case "fdid", "expid", "access_session_id", "id", "backup_token", "token",
+	case "fdid", "expid", "access_session_id", "id", "backup_token", "token", "type",
 		"authkey", "e_ident", "e_keytype", "e_regid", "e_skey_id", "e_skey_val", "e_skey_sig",
 		"mistyped", "reason", "hasav", "client_metrics", "mcc", "mnc", "sim_mcc", "sim_mnc",
 		"education_screen_displayed", "prefer_sms_over_flash", "network_radio_type", "simnum",
