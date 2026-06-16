@@ -29,14 +29,18 @@ type localWamsysMaterialProvider struct{}
 const (
 	nativeWamsysRequestedPermissionsDigest = "NNj5BoWX+yvZBYEY46Ze+Ad6Ykk0Z27FjgSysvkzzCU="
 	// Native WAMSYS records path ages as time-now minus source/data/external
-	// filesystem mtimes. Keep the virtual mtimes tied to the profile lifecycle,
-	// not to the long-lived service process.
-	nativeWamsysSourceAgeBaseSeconds          = int64(96)
-	nativeWamsysSourceAgeSpreadSeconds        = uint64(128)
-	nativeWamsysDataAgeDeltaBaseSeconds       = int64(19000)
-	nativeWamsysDataAgeDeltaSpreadSeconds     = uint64(2048)
-	nativeWamsysExternalAgeDeltaBaseSeconds   = int64(24700)
-	nativeWamsysExternalAgeDeltaSpreadSeconds = uint64(2048)
+	// filesystem mtimes. Fresh registration captures show data-dir age as a
+	// short running-session value, source-dir slightly older, and external-dir
+	// older than both. Do not bind these values to a long-lived profile age.
+	nativeWamsysAgeBucketSeconds           = int64(300)
+	nativeWamsysFreshProfileMaxAgeSeconds  = int64(600)
+	nativeWamsysDataAgeMinSeconds          = int64(30)
+	nativeWamsysDataAgeBaseSeconds         = int64(54)
+	nativeWamsysDataAgeSpreadSeconds       = uint64(36)
+	nativeWamsysSourceAheadBaseSeconds     = int64(8)
+	nativeWamsysSourceAheadSpreadSeconds   = uint64(24)
+	nativeWamsysExternalAheadBaseSeconds   = int64(8400)
+	nativeWamsysExternalAheadSpreadSeconds = uint64(1800)
 )
 
 func (localWamsysMaterialProvider) RegistrationMaterial(ctx context.Context, input wamsysMaterialInput) (*waappv1.WamsysCapture, error) {
@@ -80,53 +84,64 @@ func buildLocalWamsysGA(input wamsysMaterialInput) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	pathAges := nativeWamsysPathAges(input)
 	fields := []nativeGPIAJSONField{
 		{Key: "bi", Value: bi},
-		{Key: "ap", Value: nativeWamsysPathAgeSeconds(input, "source-dir")},
-		{Key: "ai", Value: nativeWamsysPathAgeSeconds(input, "data-dir")},
+		{Key: "ap", Value: pathAges.Source},
+		{Key: "ai", Value: pathAges.Data},
 		{Key: "mp", Value: false},
-		{Key: "ae", Value: nativeWamsysPathAgeSeconds(input, "external-files-dir")},
+		{Key: "ae", Value: pathAges.External},
 		{Key: "mu", Value: false},
 	}
 	logNativeWamsysGAPlaintextShape(input, keySource, bootID, fields)
 	return renderNativeGPIAJSONObject(fields)
 }
 
-func nativeWamsysPathAgeSeconds(input wamsysMaterialInput, label string) int64 {
-	now := nativeWamsysNow(input).Unix()
-	sourceUnix := nativeWamsysVirtualSourceUnix(input)
-	switch label {
-	case "source-dir":
-		return maxInt64(0, now-sourceUnix)
-	case "data-dir":
-		dataUnix := sourceUnix - nativeWamsysStableOffset(input, "data-dir", nativeWamsysDataAgeDeltaBaseSeconds, nativeWamsysDataAgeDeltaSpreadSeconds)
-		return maxInt64(0, now-dataUnix)
-	case "external-files-dir":
-		externalUnix := sourceUnix - nativeWamsysStableOffset(input, "external-files-dir", nativeWamsysExternalAgeDeltaBaseSeconds, nativeWamsysExternalAgeDeltaSpreadSeconds)
-		return maxInt64(0, now-externalUnix)
-	default:
-		return maxInt64(0, now-sourceUnix)
-	}
+type nativeWamsysPathAgeSet struct {
+	Source   int64
+	Data     int64
+	External int64
 }
 
-func nativeWamsysVirtualSourceUnix(input wamsysMaterialInput) int64 {
-	createdUnix := input.State.Profile.CreatedAtUnix
-	if createdUnix <= 0 {
-		createdUnix = input.State.CreatedAtUnix
-	}
-	if createdUnix <= 0 {
-		createdUnix = nativeWamsysNow(input).Unix()
-	}
-	return createdUnix - nativeWamsysStableOffset(input, "source-dir", nativeWamsysSourceAgeBaseSeconds, nativeWamsysSourceAgeSpreadSeconds)
+func nativeWamsysPathAges(input wamsysMaterialInput) nativeWamsysPathAgeSet {
+	dataAge := nativeWamsysDataPathAgeSeconds(input)
+	sourceAge := dataAge + nativeWamsysRuntimeOffset(input, "source-data-age-delta", nativeWamsysSourceAheadBaseSeconds, nativeWamsysSourceAheadSpreadSeconds)
+	externalAge := dataAge + nativeWamsysRuntimeOffset(input, "external-data-age-delta", nativeWamsysExternalAheadBaseSeconds, nativeWamsysExternalAheadSpreadSeconds)
+	return nativeWamsysPathAgeSet{Source: sourceAge, Data: dataAge, External: externalAge}
 }
 
-func nativeWamsysStableOffset(input wamsysMaterialInput, label string, base int64, spread uint64) int64 {
+func nativeWamsysDataPathAgeSeconds(input wamsysMaterialInput) int64 {
+	createdUnix := nativeWamsysStateCreatedUnix(input.State)
+	nowUnix := nativeWamsysNow(input).Unix()
+	if createdUnix > 0 {
+		age := nowUnix - createdUnix
+		if age >= nativeWamsysDataAgeMinSeconds && age <= nativeWamsysFreshProfileMaxAgeSeconds {
+			return age
+		}
+	}
+	return nativeWamsysRuntimeOffset(input, "data-dir-age", nativeWamsysDataAgeBaseSeconds, nativeWamsysDataAgeSpreadSeconds)
+}
+
+func nativeWamsysStateCreatedUnix(state nativeState) int64 {
+	if state.Profile.CreatedAtUnix > 0 {
+		return state.Profile.CreatedAtUnix
+	}
+	return state.CreatedAtUnix
+}
+
+func nativeWamsysRuntimeOffset(input wamsysMaterialInput, label string, base int64, spread uint64) int64 {
 	if spread == 0 {
 		return base
 	}
+	bucket := nativeWamsysNow(input).Unix() / nativeWamsysAgeBucketSeconds
 	seed := strings.Join([]string{
-		"byte-v-forge-wa-wamsys-path-age/v1",
+		"byte-v-forge-wa-wamsys-runtime-path-age/v1",
 		label,
+		fmt.Sprintf("%d", input.Kind),
+		fmt.Sprintf("%d", input.State.GenerateCodeAttempts),
+		fmt.Sprintf("%d", bucket),
+		phoneCC(input.Phone),
+		phoneNational(input.Phone),
 		input.State.Profile.PhoneSHA256,
 		input.State.Profile.FDID,
 		input.State.Profile.AccessSessionIDUUID,
@@ -158,13 +173,6 @@ func nativeWamsysNow(input wamsysMaterialInput) time.Time {
 		now = time.Now()
 	}
 	return now.UTC()
-}
-
-func maxInt64(left int64, right int64) int64 {
-	if left > right {
-		return left
-	}
-	return right
 }
 
 func nativeWamsysBootID(input wamsysMaterialInput) string {
