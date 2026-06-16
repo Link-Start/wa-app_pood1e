@@ -869,7 +869,12 @@ func verificationCodeNoRoutesDeliverySideEffect(data map[string]any, method waap
 	if retryAfter > 0 {
 		return true
 	}
-	return verificationMethodWaitStatus(data, "sms", true).Seconds > 0
+	for _, status := range verificationCodeMethodStatuses(data, method) {
+		if status.Code == "sms" || status.Method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS {
+			return true
+		}
+	}
+	return false
 }
 
 func verificationCodeRetryAfter(data map[string]any, method waappv1.VerificationDeliveryMethod) time.Duration {
