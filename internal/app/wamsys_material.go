@@ -64,12 +64,12 @@ func buildLocalWamsysCapture(input wamsysMaterialInput) (*waappv1.WamsysCapture,
 	}
 	return &waappv1.WamsysCapture{MapParams: []*waappv1.WamsysMapParam{
 		{Key: "gpia", Value: []byte(gpia.Primary)},
-		{Key: "_ge", Value: []byte(`{"sb":false,"sv":false}`)},
-		{Key: "_gi", Value: []byte(gpia.DeviceCompact)},
-		{Key: "_gg", Value: []byte(gpia.CodeCompact)},
-		{Key: "_gp", Value: []byte(nativeWamsysRequestedPermissionsDigest)},
 		{Key: "_ga", Value: ga},
+		{Key: "_gi", Value: []byte(gpia.DeviceCompact)},
+		{Key: "_gp", Value: []byte(nativeWamsysRequestedPermissionsDigest)},
+		{Key: "_ge", Value: []byte(`{"sb":false,"sv":false}`)},
 		{Key: "aid", Value: nativeWamsysAndroidIDDigest(input)},
+		{Key: "_gg", Value: []byte(gpia.CodeCompact)},
 	}}, nil
 }
 

@@ -95,7 +95,6 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	addOptionalRawParam(&params, "db", fields["db"])
 	addOptionalRawParam(&params, "recaptcha", fields["recaptcha"])
 	applyOrderedWamsysExcept(&params, capture, map[string]struct{}{"gpia": {}})
-	addOptionalRawParam(&params, "feo2_query_status", fields["feo2_query_status"])
 	return params, nil
 }
 
@@ -294,7 +293,6 @@ func codeDeviceMap(method string, state nativeState) map[string]string {
 		"device_ram":                 fields["device_ram"],
 		"db":                         fields["db"],
 		"recaptcha":                  fields["recaptcha"],
-		"feo2_query_status":          fields["feo2_query_status"],
 		"mcc":                        fields["mcc"],
 		"mnc":                        fields["mnc"],
 		"sim_mcc":                    fields["sim_mcc"],

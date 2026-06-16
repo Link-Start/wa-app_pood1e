@@ -519,7 +519,7 @@ func stableParamOrder(params map[string]string) []string {
 		"network_radio_type", "simnum", "hasinrc", "pid", "rc",
 		"sim_type", "airplane_mode_type", "cellular_strength", "roaming_type",
 		"device_ram", "gpia",
-		"db", "recaptcha", "aid", "_ge", "_gp", "_ga", "_gi", "_gg",
+		"db", "recaptcha", "_ga", "_gi", "_gp", "_ge", "aid", "_gg",
 		"feo2_query_status", "is_foa_fdid_app_installed", "language_selector_time_spent",
 		"language_selector_clicked_count",
 	}
