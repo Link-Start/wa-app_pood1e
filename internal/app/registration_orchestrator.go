@@ -25,31 +25,25 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 	if reason := directRegistrationMethodUnsupportedReason(method); reason != "" {
 		return rejectedRegistrationResult(basePayload, registrationMethodUnsupportedMap(method, reason)), nil
 	}
-
-	fingerprint, err := gateway.generateTransientFingerprint(ctx, basePayload)
+	phone := normalizePhone(phoneFromAction(basePayload))
+	state, stateRef, reusedState, err := gateway.registrationAttemptState(ctx, phone)
 	if err != nil {
 		return nil, err
 	}
-	fingerprintRef := firstNonEmpty(textField(fingerprint, "fingerprint_ref"), textField(fingerprint, "transient_fingerprint_ref"))
-	state, err := gateway.loadTransientState(ctx, fingerprintRef)
-	if err != nil {
-		return nil, err
-	}
+	logRegistrationAttemptState(basePayload, phone, reusedState)
 	runner, route, managedRoute, err := gateway.registrationRequestRunner(ctx, basePayload)
 	if err != nil {
 		return nil, err
 	}
 	defer runner.CloseIdleConnections()
-	defer func() {
-		_ = gateway.server.runtime.DeleteTransientState(context.Background(), fingerprintRef)
-	}()
-	phone := normalizePhone(phoneFromAction(basePayload))
 	probeResult, state := runner.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: method, AuthCodeContext: authCodeContext}, state)
+	_ = gateway.saveRegistrationAttemptState(context.Background(), stateRef, state)
 	logRegistrationProbeResult(basePayload, phone, route, method, probeResult)
 	if !registrationProbeAllowsMethod(probeResult, method) {
 		return rejectedRegistrationResult(basePayload, registrationProbeFailureMap(probeResult, route, managedRoute)), nil
 	}
 	codeResult, updatedState := runner.requestVerificationCodeWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: method, AuthCodeContext: authCodeContext}, state)
+	_ = gateway.saveRegistrationAttemptState(context.Background(), stateRef, updatedState)
 	logRegistrationCodeResult(basePayload, phone, route, method, codeResult)
 	if !verificationCodeRequestAccepted(codeResult) {
 		return rejectedRegistrationResult(basePayload, registrationRequestFailureMap(codeResult, method, route, managedRoute)), nil
@@ -85,6 +79,7 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 		_ = gateway.discardRejectedRegistration(context.Background(), basePayload, waAccountID(account), verificationRequestID)
 		return nil, err
 	}
+	_ = gateway.server.runtime.DeleteTransientState(context.Background(), stateRef)
 	response := map[string]any{
 		"success":                 true,
 		"status":                  record.GetStatus().String(),
@@ -112,6 +107,55 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 		response["retry_after_seconds"] = seconds
 	}
 	return response, nil
+}
+
+func (g *actionGateway) registrationAttemptState(ctx context.Context, phone *waappv1.PhoneTarget) (nativeState, string, bool, error) {
+	ref := registrationAttemptStateKey(phone)
+	if data, err := g.server.runtime.GetTransientState(ctx, ref); err == nil {
+		state, err := unmarshalNativeState(data)
+		if err == nil {
+			return state, ref, true, nil
+		}
+		_ = g.server.runtime.DeleteTransientState(ctx, ref)
+	}
+	engine, err := g.nativeEngine()
+	if err != nil {
+		return nativeState{}, "", false, err
+	}
+	state, err := engine.newState(phone)
+	if err != nil {
+		return nativeState{}, "", false, err
+	}
+	if err := g.saveRegistrationAttemptState(ctx, ref, state); err != nil {
+		return nativeState{}, "", false, err
+	}
+	return state, ref, false, nil
+}
+
+func (g *actionGateway) saveRegistrationAttemptState(ctx context.Context, ref string, state nativeState) error {
+	data, err := marshalNativeState(state)
+	if err != nil {
+		return err
+	}
+	return g.server.runtime.SaveTransientState(ctx, ref, data, registrationAttemptStateTTL)
+}
+
+func registrationAttemptStateKey(phone *waappv1.PhoneTarget) string {
+	return "wa-register-state:" + stableID(firstNonEmpty(phone.GetE164Number(), fullPhoneKey(phoneCC(phone), phoneNational(phone))))
+}
+
+func logRegistrationAttemptState(payload map[string]any, phone *waappv1.PhoneTarget, reused bool) {
+	phoneHash := ""
+	if phone != nil && phone.GetE164Number() != "" {
+		phoneHash = stableID(phone.GetE164Number())
+	}
+	log.Printf(
+		"wa_registration_attempt_state correlation=%s phone_hash=%s reused=%t ttl_seconds=%d",
+		probeLogValue(actionContext(payload).GetCorrelationId()),
+		phoneHash,
+		reused,
+		int64(registrationAttemptStateTTL/time.Second),
+	)
 }
 
 func logRegistrationCodeResult(payload map[string]any, phone *waappv1.PhoneTarget, route WAProxyRoute, method waappv1.VerificationDeliveryMethod, result EngineCodeResult) {
