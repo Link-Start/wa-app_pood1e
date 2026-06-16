@@ -229,6 +229,7 @@ type EngineCodeResult struct {
 	ExpiresAt                time.Time
 	RetryAfter               time.Duration
 	MethodStatuses           []VerificationMethodStatus
+	DeliverySideEffect       bool
 	AccountTransferChallenge *waappv1.AccountTransferChallenge
 	RawStatus                string
 	RawReason                string
