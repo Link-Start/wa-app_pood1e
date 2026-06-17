@@ -856,3 +856,17 @@
 - 无 abprop 配置时默认保留 SIM signal 参数，匹配脚本当前底座。
 - `/api/wa/phone/sms-probe` 探测也走 proxy-runtime 租约并在探测后释放，使页面检测的出口策略与注册 attempt 策略一致。
 - UI 要求先检测再发 SMS，但所有通道持续展示；`/v2/code` 返回的 retry-after 会体现在错误提示、顶部状态和 SMS 通道倒计时。
+
+#### 24.1 部署后小样本复验
+
+部署镜像 `byte-v-forge/wa-app-service:wa-registration-probe-20260617212957` 后，随机 CO `350` 号码走 wa-app `/api/wa/register`：
+
+| 样本 | `sent` | `blocked` | `/v2/exist` 传输失败 | `no_routes` |
+| ---: | ---: | ---: | ---: | ---: |
+| 4 | 2 | 1 | 1 | 0 |
+
+复验日志确认：
+
+- 注册链路不再出现 `wa_registration_abprop_status`，已去掉 abprop preflight。
+- `/v2/exist` 与 `/v2/code` 均走 `PROXY_RUNTIME_LEASE`，route id 为脱敏 lease route。
+- `/api/wa/phone/sms-probe` 单独探测也走 `PROXY_RUNTIME_LEASE`，并返回 SMS 可用状态，页面检测链路与注册 attempt 出口策略已一致。
