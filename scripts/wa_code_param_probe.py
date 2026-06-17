@@ -12,6 +12,8 @@ import random
 import re
 import secrets
 import string
+import subprocess
+import tempfile
 import time
 import uuid
 import warnings
@@ -939,22 +941,78 @@ def post_code(material: ProbeMaterial, config: ShapeConfig, args: argparse.Names
     }
     if envelope.authorization:
         headers["Authorization"] = envelope.authorization
-    proxies = {"http": args.proxy, "https": args.proxy} if args.proxy else None
     try:
-        response = requests.post(CODE_URL, headers=headers, data=envelope.body, proxies=proxies, timeout=args.timeout, verify=False)
-        try:
-            parsed: Any = response.json()
-        except ValueError:
-            parsed = {"raw": response.text[:500]}
+        response_status, parsed = post_form(args.transport, CODE_URL, headers, envelope.body, args.proxy, args.timeout)
         if not isinstance(parsed, dict):
             parsed = {"raw": parsed}
-        result["http_status"] = response.status_code
+        result["http_status"] = response_status
         result.update(summarize_response(parsed))
         if args.show_response:
             result["response"] = sanitize_response(parsed)
     except Exception as exc:  # noqa: BLE001 - command-line probe must summarize network failures.
         result["error"] = sanitize_text(str(exc), args.proxy)
     return result
+
+
+def post_form(transport: str, url: str, headers: dict[str, str], body: str, proxy: str, timeout: float) -> tuple[int, Any]:
+    if transport == "requests":
+        proxies = {"http": proxy, "https": proxy} if proxy else None
+        response = requests.post(url, headers=headers, data=body, proxies=proxies, timeout=timeout, verify=False)
+        try:
+            parsed: Any = response.json()
+        except ValueError:
+            parsed = {"raw": response.text[:500]}
+        return response.status_code, parsed
+    if transport in {"curl", "curl-http1.1"}:
+        return post_form_curl(transport, url, headers, body, proxy, timeout)
+    raise ValueError(f"unknown transport: {transport}")
+
+
+def post_form_curl(transport: str, url: str, headers: dict[str, str], body: str, proxy: str, timeout: float) -> tuple[int, Any]:
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as body_file:
+        body_file.write(body)
+        body_path = body_file.name
+    try:
+        cmd = [
+            "curl",
+            "--silent",
+            "--show-error",
+            "--insecure",
+            "--request",
+            "POST",
+            "--max-time",
+            str(max(timeout, 1)),
+            "--data-binary",
+            "@" + body_path,
+            "--write-out",
+            "\n%{http_code}",
+        ]
+        if transport == "curl-http1.1":
+            cmd.append("--http1.1")
+        if proxy:
+            cmd.extend(["--proxy", proxy])
+        for key, value in headers.items():
+            cmd.extend(["--header", f"{key}: {value}"])
+        cmd.append(url)
+        proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        if proc.returncode != 0:
+            raise RuntimeError(sanitize_text(proc.stderr[-500:], proxy))
+        payload, _, status_text = proc.stdout.rpartition("\n")
+        try:
+            status = int(status_text.strip())
+        except ValueError:
+            status = 0
+            payload = proc.stdout
+        try:
+            parsed: Any = json.loads(payload)
+        except ValueError:
+            parsed = {"raw": payload[:500]}
+        return status, parsed
+    finally:
+        try:
+            os.unlink(body_path)
+        except OSError:
+            pass
 
 
 def config_for_variant(name: str) -> ShapeConfig:
@@ -1127,6 +1185,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true", help="render request shape only; do not send")
     parser.add_argument("--show-fields", action="store_true", help="print field order/lengths and value hashes")
     parser.add_argument("--show-response", action="store_true", help="print sanitized response payload")
+    parser.add_argument("--transport", choices=["requests", "curl", "curl-http1.1"], default="requests")
     parser.add_argument("--list-patches", action="store_true")
     return parser
 

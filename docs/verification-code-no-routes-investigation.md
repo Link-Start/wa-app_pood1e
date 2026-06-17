@@ -378,12 +378,50 @@
 4. OPPO CPH2305 / Android 12 只保留待复核，不作为默认。
 5. 避免 OnePlus LE2100 / Android 14、固定虚构 generic 单型号、UA/did 错配组合。
 
+### 13. SMS-only 逐项因素回归
+
+新增 `scripts/wa_code_factor_suite.py`，以 Xiaomi M2007J3SC / Android 11 coherent profile 为 baseline，逐项只改一个因素；输出继续只包含号码 hash/last4、ENC/H hash 和聚合结果。`blocked` 仍按号码噪声处理，优先看 `sent / (sent + no_routes)`。
+
+本轮主结果文件：
+
+- `.temp/wa-code-param-experiments/sms-factor-suite-all-20260617-151301.summary.json`
+- `.temp/wa-code-param-experiments/sms-factor-transport-focus-20260617-151751.summary.json`
+- `.temp/wa-code-param-experiments/sms-factor-rate-burst-20260617-151858.summary.json`
+- `.temp/wa-code-param-experiments/sms-factor-rate-paced-20260617-151910.summary.json`
+
+逐项结论：
+
+| 因素 | 对照结果 | 当前判断 |
+| --- | --- | --- |
+| HTTP/TLS 指纹 | transport focus：`requests` 0/4、`curl` 0/3、`curl-http1.1` 0/6 有效决策均无 `sent` | Python requests vs curl 没有改善；仍不能代表 Android 真机 TLS 栈，真机/Android 栈仍需单独测 |
+| 安装态稳定性 | `install-fresh` 0/1，`install-stable` 0/3 | 当前“复用 fdid/authkey/key bundle”的稳定安装态没有改善，甚至更差；可能需要真实持久安装态而非局部复用 |
+| WASafe `H` / envelope | `signed` 0/2，`unsigned` 0/1，`empty-h` 0/2 | 非空 H 仍应保持，但 H/Authorization 不是单独决定项 |
+| GPIA/WAMSYS 完整性材料 | `ghcr-wamsys` 1/1，`omit-wamsys` 1/2，baseline signed 0/2 | 不像硬必填；GHCR/omit 有弱信号但样本太小，不能作为唯一结论 |
+| 号码前缀/号码质量 | CO `314` 1/2、`350` 1/2；`300/301/310` 为 0 | 号码段/号码质量有影响，`314/350` 暂时优先，`310` 暂避 |
+| 国家/SIM/locale 组合 | `context-co-locale` 2/3，`co-operator` 0/1，`zero` 0/1，`no-sim-signal` 0/3 | 单纯 MCC/MNC 不够；CO operator + `lg=es/lc=CO` 是本轮最明显正信号 |
+| app version | current 可返回业务决策；`2.26.21.73` 3/3 `bad_token` | 旧版本仍不可用，保持 `2.26.23.71` |
+| ABProp/onboarding | `code-only` 1/2，`abprop-then-code` 0/2；ABProp 自身 `ok` 且有 `exp_cfg` | ABProp 预取不是主因 |
+| client_metrics | default 0/2，attempts=2 0/2，google-play 全 blocked 无有效决策 | 未见改善 |
+| debug/root/emulator 类字段 | `db=0/1` 都 0/1；`hasav=0` 0/3；`hasinrc=0` 1/1 但样本太小 | `db` 不敏感；`hasav=0` 偏差；`hasinrc=0` 暂按噪声，需复核 |
+| 请求频率 | burst 0/5；paced 0/3 | 降速没有改善，频率不是当前主因 |
+| 设备型号画像 | 本轮 device 小样本全被 blocked/no_routes；结合前文复核，Xiaomi A11 与每次随机 generic A11 仍优先 | 本轮被号码噪声覆盖，不改前文设备候选排序 |
+
+本轮后优先级调整：
+
+1. **国家/SIM/locale 组合**：后续默认尝试 CO operator + `lg=es/lc=CO`。
+2. **号码质量/前缀**：优先 `314` / `350` 前缀做后续复验，暂避 `310`。
+3. **设备画像**：继续优先 Xiaomi Android 11 coherent profile 或每次随机化 generic Android 11。
+4. **GPIA/WAMSYS**：GHCR / omit 有弱信号，但需要在更好号码段与 locale 组合下复核。
+5. **HTTP/TLS**：curl 没改善，Android 真机/服务内 Go/更接近 Android 的 TLS 栈仍是开放项。
+
+当前基本排除：旧 app version、ABProp 缺失、单纯请求频率、单纯 `db`、单纯 Python vs curl。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
-- 单纯 CO locale / SIM / MCC 画像不一致：未看到明显影响。
-- 单纯号码前缀：未看到稳定决定性影响。
-- 单纯把 Python requests 换成 curl：未看到改善。
+- 单纯 MCC/MNC 画像不一致：未看到明显影响；但 CO operator + `lg=es/lc=CO` 组合出现正信号，需复核。
+- 单纯号码前缀：不是硬决定项；但本轮 `314` / `350` 好于 `300/301/310`，后续优先使用。
+- 单纯把 Python requests 换成 curl / curl HTTP/1.1：未看到改善。
 - 组合多个 GHCR 形态参数：未优于 `device-ghcr-defaults` 单项。
 - Python probe 的空 `H=` 形态：已修为非空 signed `H`，但修复后仍未单独带来 `sent`。
 - 旧 app version：当前 token/服务端校验下会稳定 `bad_token`，不应降级。
@@ -417,7 +455,7 @@
 
 - 继续以 `device-ghcr-defaults` 作为参数底座做外部变量实验。
 - 不再优先验证 `/v2/exist` 是否缺失。
-- 下一轮优先验证：Xiaomi Android 11 coherent profile / 每次安装态随机化 generic Android 11、真实客户端/Go 客户端指纹、稳定安装态 profile。
+- 下一轮优先验证：Xiaomi Android 11 coherent profile + CO operator + `lg=es/lc=CO` + 优先 `314/350` 前缀；随后再复核 GPIA/WAMSYS 与真实客户端/Go 客户端指纹。
 - GPIA / WAMSYS / 设备完整性画像后续只在出口和号码质量更稳定后再复验，避免被 `blocked` 号码噪声覆盖。
 - 所有实验结果继续只记录聚合状态与脱敏标识，禁止记录可复用请求材料。
 - 后续 probe 默认使用 signed WASafe envelope；只有做回归对照时才使用 `--unsigned` 或 `--empty-h`。
