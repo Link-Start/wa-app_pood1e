@@ -27,7 +27,6 @@ type wamsysMaterialProvider interface {
 type localWamsysMaterialProvider struct{}
 
 const (
-	nativeWamsysRequestedPermissionsDigest = "NNj5BoWX+yvZBYEY46Ze+Ad6Ykk0Z27FjgSysvkzzCU="
 	// Native WAMSYS records path ages as time-now minus source/data/external
 	// filesystem mtimes. Fresh registration captures show data-dir age as a
 	// short running-session value, source-dir slightly older, and external-dir
@@ -70,9 +69,7 @@ func buildLocalWamsysCapture(input wamsysMaterialInput) (*waappv1.WamsysCapture,
 		{Key: "gpia", Value: []byte(gpia.Primary)},
 		{Key: "_ga", Value: ga},
 		{Key: "_gi", Value: []byte(gpia.DeviceCompact)},
-		{Key: "_gp", Value: []byte(nativeWamsysRequestedPermissionsDigest)},
 		{Key: "_ge", Value: []byte(`{"sb":false,"sv":false}`)},
-		{Key: "aid", Value: nativeWamsysAndroidIDDigest(input)},
 		{Key: "_gg", Value: []byte(gpia.CodeCompact)},
 	}}, nil
 }
@@ -191,27 +188,6 @@ func nativeStableWamsysBootID(state nativeState) string {
 		encoded[16:20],
 		encoded[20:32],
 	}, "-")
-}
-
-func nativeWamsysAndroidIDDigest(input wamsysMaterialInput) []byte {
-	return []byte(nativeGPIASHA256Base64([]byte(nativeWamsysAndroidID(input))))
-}
-
-func nativeWamsysAndroidID(input wamsysMaterialInput) string {
-	profile := normalizeNativePhoneProfile(input.State.Profile, "")
-	seed := strings.Join([]string{
-		"byte-v-forge-wa-android-id/v1",
-		phoneCC(input.Phone),
-		phoneNational(input.Phone),
-		input.State.Profile.PhoneSHA256,
-		profile.FDID,
-		profile.ExpIDUUID,
-		input.State.Profile.AccessSessionIDUUID,
-		input.State.AuthKey,
-		input.State.KeyBundle.IdentityPublic,
-	}, "|")
-	sum := sha256.Sum256([]byte(seed))
-	return fmt.Sprintf("%016x", binary.BigEndian.Uint64(sum[:8]))
 }
 
 func (e *NativeEngine) applyRuntimeWamsys(

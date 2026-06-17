@@ -36,7 +36,6 @@ type nativeGPIAJSONField struct {
 
 func buildNativeGPIAErrorMaterial(input wamsysMaterialInput) (nativeGPIAMaterial, error) {
 	sourceDir := nativeGPIASourceDir(input)
-	pathDigest := nativeGPIASHA256Base64([]byte(sourceDir))
 	keySource := nativeGPIAKeySource(input.State)
 	primaryFields := []nativeGPIAJSONField{
 		{Key: "sizeInBytes", Value: nativeGPIASourceSize},
@@ -45,7 +44,6 @@ func buildNativeGPIAErrorMaterial(input wamsysMaterialInput) (nativeGPIAMaterial
 		{Key: "shatr", Value: nativeGPIASourceDigest},
 		{Key: "p", Value: sourceDir},
 		{Key: "cert", Value: nativeGPIACertDigest},
-		{Key: "sha256", Value: pathDigest},
 	}
 	logNativeGPIAPlaintextShape(input, "primary_long", keySource, primaryFields)
 	primary, err := encryptNativeGPIAJSON(keySource, primaryFields)
@@ -70,7 +68,6 @@ func buildNativeGPIAErrorMaterial(input wamsysMaterialInput) (nativeGPIAMaterial
 		{Key: "_ln", Value: nativeGPIANativeLibDigest},
 		{Key: "_ist", Value: nativeGPIASourceDigest},
 		{Key: "_icr", Value: nativeGPIACertDigest},
-		{Key: "_is", Value: pathDigest},
 	}
 	logNativeGPIAPlaintextShape(input, "device_compact", keySource, deviceCompactFields)
 	deviceCompact, err := encryptNativeGPIAJSON(keySource, deviceCompactFields)
@@ -98,11 +95,6 @@ func nativeStableGPIASourceDir(state nativeState) string {
 func nativeStableInstallToken(state nativeState, label string) string {
 	sum := sha256.Sum256([]byte(nativeStableRuntimeSeed(state, label)))
 	return base64.RawURLEncoding.EncodeToString(sum[:16])
-}
-
-func nativeGPIASHA256Base64(value []byte) string {
-	sum := sha256.Sum256(value)
-	return base64.StdEncoding.EncodeToString(sum[:])
 }
 
 func nativeGPIAKeySource(state nativeState) string {

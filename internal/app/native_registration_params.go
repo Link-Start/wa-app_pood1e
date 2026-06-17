@@ -4,11 +4,10 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha1"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -403,16 +402,8 @@ func isRuntimeNativeDeviceMapKey(key string) bool {
 }
 
 func nativeRuntimeProcessID(state nativeState) string {
-	seed := strings.Join([]string{
-		"byte-v-forge-wa-runtime-pid/v1",
-		state.Profile.PhoneSHA256,
-		state.Profile.FDID,
-		state.Profile.ExpIDUUID,
-		state.AuthKey,
-		strconv.FormatInt(state.CreatedAtUnix, 10),
-	}, "|")
-	sum := sha256.Sum256([]byte(seed))
-	return strconv.Itoa(10000 + int(binary.BigEndian.Uint32(sum[:4])%50000))
+	_ = state
+	return strconv.Itoa(os.Getpid())
 }
 
 const (
