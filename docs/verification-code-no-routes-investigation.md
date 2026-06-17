@@ -141,6 +141,39 @@
 
 当前判断：完整性画像仍可能有影响，但在这个稳定出口和随机 CO 号码条件下，信号不稳定；更可能被号码质量、出口国家/ASN 或真实客户端指纹噪声覆盖。
 
+
+### 8. WASafe `H` 签名字段
+
+发现 Python probe 早期一直发送 `ENC=...&H=`，这与正式服务路径不一致。
+
+正式 Go 路径中，`/v2/exist`、`/v2/code`、`/v2/register` 都会先生成 native software attestation，然后发送：
+
+- body：`ENC=<encrypted>&H=<signature>`
+- header：`Authorization: <certificate-chain>`
+
+无认证 envelope 才会发送纯 `ENC=<encrypted>`。`ENC=<encrypted>&H=` 属于异常形态：字段存在但签名为空。
+
+已修复 `scripts/wa_code_param_probe.py`：
+
+- 默认生成 signed WASafe envelope。
+- body 使用非空 `H` 签名。
+- header 设置 `Authorization` 证书链。
+- 保留 `--unsigned` 与 `--empty-h` 仅用于对照实验。
+- 输出只记录 `enc_hash` / `h_hash`，不输出原始 ENC、H、Authorization。
+
+修复后 smoke 结果：signed envelope 能返回正常业务响应，不触发 `bad_param`。
+
+对照结果文件：
+
+- `.temp/wa-code-param-experiments/signed-h-vs-empty-h-20260617-141213.summary.json`
+
+| 组别 | 总样本 | `sent` | `no_routes` | `blocked` | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `signed-h` | 11 | 0 | 8 | 3 | 8 | 0/8 |
+| `empty-h-legacy` | 15 | 0 | 8 | 7 | 8 | 0/8 |
+
+结论：`H=` 空值确实是 probe 的错误形态，脚本已修；但在当前样本下，修成 signed `H` 后仍未复现 `sent`，所以它不是单独足以解释 `no_routes` 的因素。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
@@ -148,6 +181,7 @@
 - 单纯号码前缀：未看到稳定决定性影响。
 - 单纯把 Python requests 换成 curl：未看到改善。
 - 组合多个 GHCR 形态参数：未优于 `device-ghcr-defaults` 单项。
+- Python probe 的空 `H=` 形态：已修为非空 signed `H`，但修复后仍未单独带来 `sent`。
 
 ## 仍然可疑的因素
 
@@ -174,3 +208,4 @@
 - 下一轮优先验证：同国家稳定出口、真实客户端/Go 客户端指纹、稳定安装态 profile。
 - GPIA / WAMSYS / 设备完整性画像后续只在出口和号码质量更稳定后再复验，避免被 `blocked` 号码噪声覆盖。
 - 所有实验结果继续只记录聚合状态与脱敏标识，禁止记录可复用请求材料。
+- 后续 probe 默认使用 signed WASafe envelope；只有做回归对照时才使用 `--unsigned` 或 `--empty-h`。
