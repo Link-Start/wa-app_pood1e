@@ -275,6 +275,7 @@ def factor_arms() -> list[FactorArm]:
     )
     wamsys_omits = ("gpia", "_ga", "_gi", "_gp", "_ge", "aid", "_gg")
     co_locale_sets = ("lg=es", "lc=CO")
+    co_operator_patch = ("operator-co-732101",)
     combo_arms = []
     for prefix in ("314", "350"):
         combo_arms.extend(
@@ -282,29 +283,59 @@ def factor_arms() -> list[FactorArm]:
                 FactorArm(
                     "combo",
                     f"combo-{prefix}-current",
-                    patches=("operator-co-732101",),
+                    patches=co_operator_patch,
                     sets=co_locale_sets,
                     prefix=prefix,
                 ),
                 FactorArm(
                     "combo",
                     f"combo-{prefix}-ghcr",
-                    patches=("operator-co-732101", *ghcr_patches),
+                    patches=(*co_operator_patch, *ghcr_patches),
                     sets=co_locale_sets,
                     prefix=prefix,
                 ),
                 FactorArm(
                     "combo",
                     f"combo-{prefix}-omit-wamsys",
-                    patches=("operator-co-732101",),
+                    patches=co_operator_patch,
                     sets=co_locale_sets,
                     omits=wamsys_omits,
                     prefix=prefix,
                 ),
             ]
         )
+    routing_base = FactorArm(
+        "routing",
+        "routing-baseline-350",
+        patches=co_operator_patch,
+        sets=co_locale_sets,
+        prefix="350",
+    )
+    routing_arms = [
+        routing_base,
+        replace(routing_base, label="routing-us-locale", sets=()),
+        replace(routing_base, label="routing-zero-operator", patches=()),
+        replace(routing_base, label="routing-operator-omit", patches=("operator-omit",)),
+        replace(routing_base, label="routing-simnum-one", sets=(*co_locale_sets, "simnum=1")),
+        replace(routing_base, label="routing-sim-type-zero", sets=(*co_locale_sets, "sim_type=0")),
+        replace(routing_base, label="routing-no-sim-signal", patches=(*co_operator_patch, "no-sim-signal")),
+        replace(routing_base, label="routing-radio-zero", sets=(*co_locale_sets, "network_radio_type=0")),
+        replace(routing_base, label="routing-radio-two", sets=(*co_locale_sets, "network_radio_type=2")),
+        replace(routing_base, label="routing-radio-thirteen", sets=(*co_locale_sets, "network_radio_type=13")),
+        replace(routing_base, label="routing-cellular-zero", sets=(*co_locale_sets, "cellular_strength=0")),
+        replace(routing_base, label="routing-cellular-three", sets=(*co_locale_sets, "cellular_strength=3")),
+        replace(routing_base, label="routing-roaming-one", sets=(*co_locale_sets, "roaming_type=1")),
+        replace(routing_base, label="routing-airplane-one", sets=(*co_locale_sets, "airplane_mode_type=1")),
+        replace(routing_base, label="routing-feo2-omit", omits=("feo2_query_status",)),
+        replace(routing_base, label="routing-feo2-security-error", sets=(*co_locale_sets, "feo2_query_status=error_security_exception")),
+        replace(routing_base, label="routing-mnc-102", sets=(*co_locale_sets, "mnc=102", "sim_mnc=102")),
+        replace(routing_base, label="routing-mnc-103", sets=(*co_locale_sets, "mnc=103", "sim_mnc=103")),
+        replace(routing_base, label="routing-mnc-123", sets=(*co_locale_sets, "mnc=123", "sim_mnc=123")),
+        replace(routing_base, label="routing-mnc-130", sets=(*co_locale_sets, "mnc=130", "sim_mnc=130")),
+    ]
     return [
         *combo_arms,
+        *routing_arms,
         FactorArm("transport", "transport-requests"),
         FactorArm("transport", "transport-curl", transport="curl"),
         FactorArm("transport", "transport-curl-http1", transport="curl-http1.1"),
@@ -357,9 +388,81 @@ def output_paths(args: argparse.Namespace) -> tuple[Path, Path]:
     return out_dir / f"{run_id}.ndjson", out_dir / f"{run_id}.summary.json"
 
 
+def is_target_decision(row: dict[str, Any]) -> bool:
+    return row.get("outcome") in {"sent", "no_routes"}
+
+
+def sleep_after_request(args: argparse.Namespace) -> None:
+    if not args.dry_run and args.sleep > 0:
+        time.sleep(args.sleep + random.random() * max(args.jitter, 0))
+
+
+def run_fixed_rounds(
+    repo_root: Path,
+    args: argparse.Namespace,
+    arms: list[FactorArm],
+    stable_cache: dict[str, probe.ProbeMaterial],
+    handle: Any,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for round_index in range(1, args.samples + 1):
+        round_arms = list(arms)
+        random.shuffle(round_arms)
+        for arm in round_arms:
+            row = run_arm_once(repo_root, args, arm, stable_cache)
+            row["round"] = round_index
+            rows.append(row)
+            line = json.dumps(row, ensure_ascii=False, sort_keys=True)
+            print(line, flush=True)
+            handle.write(line + "\n")
+            handle.flush()
+            sleep_after_request(args)
+    return rows
+
+
+def run_until_target_decisions(
+    repo_root: Path,
+    args: argparse.Namespace,
+    arms: list[FactorArm],
+    stable_cache: dict[str, probe.ProbeMaterial],
+    handle: Any,
+) -> list[dict[str, Any]]:
+    max_samples = args.max_samples if args.max_samples > 0 else args.samples
+    sample_counts = {arm.label: 0 for arm in arms}
+    decision_counts = {arm.label: 0 for arm in arms}
+    rows: list[dict[str, Any]] = []
+    batch_index = 0
+    while True:
+        active_arms = [
+            arm
+            for arm in arms
+            if sample_counts[arm.label] < max_samples and decision_counts[arm.label] < args.target_decisions
+        ]
+        if not active_arms:
+            return rows
+        batch_index += 1
+        random.shuffle(active_arms)
+        for arm in active_arms:
+            row = run_arm_once(repo_root, args, arm, stable_cache)
+            sample_counts[arm.label] += 1
+            if is_target_decision(row):
+                decision_counts[arm.label] += 1
+            row["round"] = batch_index
+            row["sample_index"] = sample_counts[arm.label]
+            row["target_decision_index"] = decision_counts[arm.label]
+            rows.append(row)
+            line = json.dumps(row, ensure_ascii=False, sort_keys=True)
+            print(line, flush=True)
+            handle.write(line + "\n")
+            handle.flush()
+            sleep_after_request(args)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run one-by-one SMS /v2/code factor probes with a Xiaomi Android 11 baseline.")
     parser.add_argument("--samples", type=int, default=3)
+    parser.add_argument("--target-decisions", type=int, default=0, help="stop each arm after this many sent/no_routes decisions")
+    parser.add_argument("--max-samples", type=int, default=0, help="per-arm cap when --target-decisions is set; defaults to --samples")
     parser.add_argument("--groups", default="", help="comma-separated factor groups")
     parser.add_argument("--labels", default="", help="comma-separated exact labels")
     parser.add_argument("--proxy", default="", help="HTTP proxy URL; WA_PROBE_PROXY_URL is used when omitted")
@@ -387,24 +490,16 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     stable_cache: dict[str, probe.ProbeMaterial] = {}
     ndjson_path, summary_path = output_paths(args)
-    rows: list[dict[str, Any]] = []
     with ndjson_path.open("w", encoding="utf-8") as handle:
-        for round_index in range(1, args.samples + 1):
-            round_arms = list(arms)
-            random.shuffle(round_arms)
-            for arm in round_arms:
-                row = run_arm_once(repo_root, args, arm, stable_cache)
-                row["round"] = round_index
-                rows.append(row)
-                line = json.dumps(row, ensure_ascii=False, sort_keys=True)
-                print(line, flush=True)
-                handle.write(line + "\n")
-                handle.flush()
-                if not args.dry_run and args.sleep > 0:
-                    time.sleep(args.sleep + random.random() * max(args.jitter, 0))
+        if args.target_decisions > 0:
+            rows = run_until_target_decisions(repo_root, args, arms, stable_cache, handle)
+        else:
+            rows = run_fixed_rounds(repo_root, args, arms, stable_cache, handle)
     summary = summarize(rows)
     payload = {
         "samples_per_arm": args.samples,
+        "target_decisions": args.target_decisions,
+        "max_samples": args.max_samples,
         "groups": sorted(groups) if groups else "all",
         "labels": [arm.label for arm in arms],
         "summary": summary,

@@ -462,6 +462,31 @@
 - `ghcr-wamsys` 与 `omit-wamsys` 在好前缀/locale 下没有优于 current；下一步默认使用 current WAMSYS/GPIA。
 - `350` 的 `blocked` 比例高，说明号码质量仍是主要噪声；后续应继续扩大 `350` 样本或换更高质量号码池。
 
+### 15. 同一出口打量后的污染风险
+
+在继续以 `Xiaomi A11 + CO operator/locale + 350 + current WAMSYS/GPIA` 作为底座做 routing 单变量时，发现同一稳定出口已明显进入高噪声状态。
+
+新增 `scripts/wa_code_factor_suite.py` 的 `routing` 分组，覆盖：locale、operator、省略 operator、SIM signal、`simnum`、`network_radio_type`、`cellular_strength`、`roaming_type`、`airplane_mode_type`、`feo2_query_status`、CO MNC 变体等单变量。为避免 `blocked` 噪声无限放大，脚本新增：
+
+- `--target-decisions`：每个 arm 达到指定数量的 `sent/no_routes` 有效决策后停止。
+- `--max-samples`：每个 arm 的样本上限，避免在只有 `blocked` 时无限消耗同一出口。
+
+结果文件：
+
+- `.temp/wa-code-param-experiments/sms-routing-screen-20260617-153355.ndjson`
+- `.temp/wa-code-param-experiments/sms-routing-focus-20260617-153708.ndjson`（中途手动停止，未生成 summary）
+
+近几轮同一出口统计：
+
+| 结果文件 | 请求数 | `sent` | `no_routes` | `blocked` | 传输错误 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `sms-routing-screen-20260617-153355.ndjson` | 60 | 0 | 10 | 50 | 0 |
+| `sms-routing-focus-20260617-153708.ndjson` | 20 | 0 | 4 | 15 | 1 |
+
+判断：这轮不能继续当作干净的参数实验。`routing-baseline-350` 本身也没有稳定复现早前的 `sent`，说明同一出口/代理账号/批量行为已经成为主导噪声。`blocked` 通常可按号码噪声处理，但当所有 arm 同时大面积 `blocked`，且 baseline 也失效时，应把出口信誉、请求速率、同出口多号码注册行为纳入首要嫌疑。
+
+后续 routing 单变量实验需要换干净出口或轮转出口，并控制每个出口的请求预算；否则无法区分参数导致的 `no_routes` 与出口污染导致的 `no_routes`。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
