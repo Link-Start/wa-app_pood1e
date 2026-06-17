@@ -100,7 +100,6 @@ func (e *NativeEngine) probeAccountWithState(ctx context.Context, input EngineRe
 	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
 		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
-	e.refreshPreChatdABProps(ctx, input.Phone, &state, input.AppVersion)
 	params, rawKeys := e.existParams(input.Phone, state)
 	if err := e.applyRuntimeWamsys(ctx, waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST, input.Phone, state, params, rawKeys); err != nil {
 		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
@@ -146,7 +145,6 @@ func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, inp
 	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
 		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
 	}
-	e.refreshPreChatdABProps(ctx, input.Phone, &state, input.AppVersion)
 	state.nextGenerateCodeAttempt()
 	params, err := e.codeRequestOrderedParams(ctx, input.Phone, input.DeliveryMethod, state, input.AuthCodeContext)
 	if err != nil {

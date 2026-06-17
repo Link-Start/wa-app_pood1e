@@ -67,16 +67,6 @@ function channelState(method: RegistrationChannelMethodOption, status: WaProbeSt
         title: '先填写号码',
       };
     }
-    if (method.directRequest && method.code === 'sms') {
-      return {
-        ready: true,
-        cooldown: 0,
-        label: '发起',
-        badge: 'default' as const,
-        Icon: CheckCircle2,
-        title: '发起 SMS 注册',
-      };
-    }
     return {
       ready: false,
       cooldown: 0,

@@ -39,15 +39,14 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
   const activeRegistrationResult = registrationSamePhone ? registrationResult : null;
   const status = waProbeStatus(activeRegistrationResult || (samePhone ? probe?.result : null));
   const channelStatus = samePhone ? waProbeStatus(activeRegistrationResult || probe?.result) : null;
-  const directRegistration = hasPhoneTarget && !channelStatus;
   const cooldownElapsedSeconds = Math.max(0, (clockNow - cooldownStartedAt) / 1000);
   const blocked = status.blocked === true;
   const channelsHardBlocked = registrationChannelsHardBlocked(channelStatus);
   const nextCooldownSeconds = registrationMinimumCooldownSeconds(channelStatus, cooldownElapsedSeconds);
-  const canRegister = ((samePhone && registrationAnyMethodAvailable(channelStatus, cooldownElapsedSeconds)) || directRegistration) && !channelsHardBlocked;
+  const canRegister = samePhone && registrationAnyMethodAvailable(channelStatus, cooldownElapsedSeconds) && !channelsHardBlocked;
   const detected = samePhone && Boolean(channelStatus);
   const badgeVariant = pending ? 'default' : blocked ? 'destructive' : canRegister ? 'default' : detected ? 'secondary' : 'outline';
-  const badgeLabel = accountAddBadgeLabel(Boolean(pending), blocked, directRegistration, canRegister, nextCooldownSeconds, detected);
+  const badgeLabel = accountAddBadgeLabel(Boolean(pending), blocked, canRegister, nextCooldownSeconds, detected);
 
   useEffect(() => {
     const activeResult = activeRegistrationResult || (samePhone ? probe?.result : null);
@@ -95,7 +94,7 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
   async function startRegistration(method: SelectableRegistrationMethodOption) {
     const resolved = resolveWaPhoneTarget(phone, countryCallingCode);
     if (!resolved.target) return onError(resolved.error || '请输入手机号和国家拨号码');
-    if ((!samePhone || !channelStatus) && method.code !== 'sms') return onError('未检测时仅支持直接发起 SMS');
+    if (!samePhone || !channelStatus) return onError('请先检测验证通道');
     setBusy(true);
     try {
       const result = await registerWaPhone(resolved.target.input, method.value);
@@ -164,10 +163,9 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
   );
 }
 
-function accountAddBadgeLabel(pending: boolean, blocked: boolean, directRegistration: boolean, canRegister: boolean, cooldownSeconds: number, detected: boolean) {
+function accountAddBadgeLabel(pending: boolean, blocked: boolean, canRegister: boolean, cooldownSeconds: number, detected: boolean) {
   if (pending) return '等待 OTP';
   if (blocked) return '已封禁';
-  if (directRegistration) return '可尝试';
   if (canRegister) return '可注册';
   if (cooldownSeconds > 0) return `冷却 ${countdownLabel(cooldownSeconds)}`;
   if (detected) return '暂无可用';

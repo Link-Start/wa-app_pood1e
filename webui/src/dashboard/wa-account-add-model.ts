@@ -1,5 +1,5 @@
 import type { WaWorkflowResponse } from './wa-api';
-import { accountReasonLabel } from './wa-result-labels';
+import { accountReasonLabel, countdownLabel } from './wa-result-labels';
 import type { WaProbeStatus } from './wa-result-model';
 import { resolveWaPhoneTarget, type WaResolvedPhone } from './wa-utils';
 
@@ -20,6 +20,7 @@ export function registrationFailureMessage(result: WaWorkflowResponse, status: W
   const reason = accountReasonLabel(detail);
   if (status.blocked) return '号码被拒绝/封禁';
   if (status.accountFlow === 'invalid_number') return reason || '号码无效';
+  if (status.smsWaitSeconds && status.smsWaitSeconds > 0) return `请求冷却中，${countdownLabel(status.smsWaitSeconds)} 后重试`;
   if (status.accountFlow === 'rate_limited') return reason || '请求冷却中';
   return reason || '注册失败';
 }

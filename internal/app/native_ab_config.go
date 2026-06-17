@@ -119,7 +119,7 @@ func nativePreChatdABLogSummary(state nativeState) nativePreChatdABSummary {
 	return nativePreChatdABSummary{
 		ConfigCount:      len(configs),
 		GPIAEnabled:      nativeABBoolFromConfigs(configs, nativeABCodeGPIA, true),
-		SIMSignalEnabled: nativeABBoolFromConfigs(configs, nativeABCodeSIMSignal, false),
+		SIMSignalEnabled: nativeABBoolFromConfigs(configs, nativeABCodeSIMSignal, true),
 		RecaptchaStage:   nativeRecaptchaStage(state, configs),
 		RequestIDRandom:  nativeABBoolFromConfigs(configs, nativeABCodeRandomRequestID, false),
 	}
@@ -138,7 +138,7 @@ func applyNativePreChatdABDeviceFields(fields map[string]string, state nativeSta
 		return
 	}
 	configs := nativePreChatdABConfigs(state)
-	if nativeABBoolFromConfigs(configs, nativeABCodeSIMSignal, false) {
+	if nativeABBoolFromConfigs(configs, nativeABCodeSIMSignal, true) {
 		fields["sim_type"] = nativeABSIMType(fields)
 		fields["airplane_mode_type"] = "0"
 		fields["cellular_strength"] = "5"

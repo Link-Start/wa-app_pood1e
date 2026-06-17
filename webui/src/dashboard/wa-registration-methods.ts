@@ -53,7 +53,8 @@ export function registrationMethodStatus(status: WaProbeStatus, method: Verifica
 
 export function registrationMethodCooldownSeconds(status: WaProbeStatus, method: VerificationDeliveryMethod, elapsedSeconds = 0) {
   const methodStatus = registrationMethodStatus(status, method);
-  const base = methodStatus?.cooldownSeconds || 0;
+  const smsFallback = method === VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_SMS ? status.smsWaitSeconds || 0 : 0;
+  const base = methodStatus?.cooldownSeconds || smsFallback;
   return base > 0 ? Math.max(0, Math.ceil(base - elapsedSeconds)) : 0;
 }
 

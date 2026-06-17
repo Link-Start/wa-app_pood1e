@@ -113,7 +113,17 @@ func (s *Server) numberProbeProxy(ctx context.Context, payload map[string]any) (
 	if !useProxy {
 		return route, "", waProxySummary(route, false), func() {}, nil
 	}
-	return route, route.ProxyURL, waProxySummary(route, true), func() {}, nil
+	gateway := &actionGateway{server: s}
+	lease, leasedRoute, err := gateway.acquireRegistrationProxyLease(ctx, payload, route, numberProbeProxyRouteTTL)
+	if err != nil {
+		return WAProxyRoute{}, "", nil, func() {}, err
+	}
+	release := func() {}
+	if validRegistrationProxyLease(lease) {
+		route = leasedRoute
+		release = func() { gateway.releaseRegistrationProxyLease(context.Background(), lease) }
+	}
+	return route, route.ProxyURL, waProxySummary(route, true), release, nil
 }
 
 func buildNumberProbeResult(input map[string]any, proxy map[string]any, fingerprint map[string]any, account map[string]any, sms map[string]any) map[string]any {

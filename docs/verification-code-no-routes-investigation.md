@@ -833,3 +833,26 @@
 - GPIA / WAMSYS / 设备完整性画像后续只在出口和号码质量更稳定后再复验，避免被 `blocked` 号码噪声覆盖。
 - 所有实验结果继续只记录聚合状态与脱敏标识，禁止记录可复用请求材料。
 - 后续 probe 默认使用 signed WASafe envelope；只有做回归对照时才使用 `--unsigned` 或 `--empty-h`。
+
+### 24. 脚本与 wa-app 成功率对比补充
+
+2026-06-17 追加同一时间窗口的小样本对比：
+
+| 路径 | 样本 | `sent` | `no_routes` | `blocked` | 其它失败 | 有效决策 `sent` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 脚本 `candidate-random-a11-350-default`，每请求新 proxy-runtime 租约 | 4 | 3 | 0 | 1 | 0 | 3/3 |
+| wa-app `/api/wa/register`，随机 CO `350` | 4 | 1 | 0 | 0 | 3 个 `/v2/exist` 传输失败 | 1/1 |
+
+差异定位：
+
+- 脚本候选只发 `/v2/code`，不做 `/v2/reg_onboard_abprop` 预热。
+- wa-app 注册链路在 `/v2/exist` 和 `/v2/code` 前都会先请求 `/v2/reg_onboard_abprop`。本轮 3 个失败样本都在 abprop 前置请求后出现 `/v2/exist` `EOF` / `unexpected EOF`，导致页面看到“无验证通道”。
+- 脚本本轮发现 release payload 仍是旧 camelCase，当前 proxy-runtime release API 使用 snake_case 且校验 canonical account_id；已修正脚本，避免租约释放 400。
+- wa-app `/v2/code` 若返回 `retry_after_seconds`，同号码再次尝试会在 `/v2/exist` 上看到 SMS 冷却；这不是“隐藏通道”，应该在 UI 上展示具体倒计时。
+
+落地调整：
+
+- 注册链路停止在 `/v2/exist` / `/v2/code` 前做 abprop 预热，回到脚本候选的“无 abprop preflight”底座。
+- 无 abprop 配置时默认保留 SIM signal 参数，匹配脚本当前底座。
+- `/api/wa/phone/sms-probe` 探测也走 proxy-runtime 租约并在探测后释放，使页面检测的出口策略与注册 attempt 策略一致。
+- UI 要求先检测再发 SMS，但所有通道持续展示；`/v2/code` 返回的 retry-after 会体现在错误提示、顶部状态和 SMS 通道倒计时。

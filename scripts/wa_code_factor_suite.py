@@ -104,10 +104,12 @@ class ProxyRuntimeLeaseClient:
         lease_id = text_value(lease, "leaseId", "lease_id") or text_value(dict_value(egress, "labels"), "lease_id", "leaseId")
         if not lease_id:
             raise RuntimeError("proxy-runtime lease_id is empty")
+        lease_account_id = text_value(lease, "accountId", "account_id") or account_id
+        lease_purpose = text_value(lease, "purpose") or purpose
         return ProxyRuntimeLease(
             lease_id=lease_id,
-            account_id=account_id,
-            purpose=purpose,
+            account_id=lease_account_id,
+            purpose=lease_purpose,
             proxy_url=self._proxy_url(egress),
             listener_id=proxy_runtime_listener_id(lease, body),
             exit_country=proxy_runtime_exit_text(("exitCountry", "exit_country", "countryCode", "country_code"), egress, lease, body).upper(),
@@ -116,7 +118,7 @@ class ProxyRuntimeLeaseClient:
         )
 
     def release(self, lease: ProxyRuntimeLease) -> str:
-        payload = {"leaseId": lease.lease_id, "accountId": lease.account_id, "purpose": lease.purpose}
+        payload = {"lease_id": lease.lease_id, "account_id": lease.account_id, "purpose": lease.purpose}
         response = self._session.post(self._api_base + "/leases/release", json=payload, timeout=self._timeout)
         response.raise_for_status()
         return "released"
