@@ -37,6 +37,43 @@ CONTROL_DEVICES = {
     "xiaomi-known-a11": DeviceProfile("xiaomi-known-a11", "Xiaomi", "M2007J3SC", "11", "M2007J3SC_11.0.14(CN01)", "6.58"),
     "oneplus-known-a14": DeviceProfile("oneplus-known-a14", "OnePlus", "LE2100", "14", "LE2100_14.0.0.605(CN01)", "11.24"),
 }
+GENERIC_VENDOR = "VANTADigital"
+GENERIC_MODEL = "A3820WF"
+GENERIC_RAM = "5.50"
+XIAOMI_MODEL = "M2007J3SC"
+XIAOMI_RAM = "6.58"
+
+
+def fixed_generic_profile(label: str, android: str, ram_gib: str = GENERIC_RAM, display_android: str | None = None) -> DeviceProfile:
+    did_android = display_android or android
+    return DeviceProfile(
+        label=label,
+        vendor=GENERIC_VENDOR,
+        model=GENERIC_MODEL,
+        android=android,
+        display_id=f"{GENERIC_MODEL}_{did_android}.0.4.210(GL01)",
+        ram_gib=ram_gib,
+    )
+
+
+def fixed_xiaomi_profile(label: str, android: str, ram_gib: str = XIAOMI_RAM, display_android: str | None = None) -> DeviceProfile:
+    did_android = display_android or android
+    return DeviceProfile(
+        label=label,
+        vendor="Xiaomi",
+        model=XIAOMI_MODEL,
+        android=android,
+        display_id=f"{XIAOMI_MODEL}_{did_android}.0.14(CN01)",
+        ram_gib=ram_gib,
+    )
+
+
+def fixed_generic_with_xiaomi_display(label: str) -> DeviceProfile:
+    return DeviceProfile(label, GENERIC_VENDOR, GENERIC_MODEL, "11", f"{XIAOMI_MODEL}_11.0.14(CN01)", GENERIC_RAM)
+
+
+def fixed_xiaomi_with_generic_display(label: str) -> DeviceProfile:
+    return DeviceProfile(label, "Xiaomi", XIAOMI_MODEL, "11", f"{GENERIC_MODEL}_11.0.4.210(GL01)", XIAOMI_RAM)
 
 
 def rand_digits(length: int) -> str:
@@ -97,6 +134,26 @@ def random_xiaomi_like_profile(label: str) -> DeviceProfile:
 def build_device(label: str) -> DeviceProfile:
     if label in CONTROL_DEVICES:
         return CONTROL_DEVICES[label]
+    if label.startswith("generic-a") and label[9:].isdigit():
+        android = label[9:]
+        return fixed_generic_profile(label, android)
+    if label.startswith("xiaomi-a") and label[8:].isdigit():
+        android = label[8:]
+        return fixed_xiaomi_profile(label, android)
+    if label.startswith("ram-a11-"):
+        raw = label.removeprefix("ram-a11-")
+        if raw.isdigit():
+            return fixed_generic_profile(label, "11", f"{int(raw) / 100:.2f}")
+    if label == "consistent-generic-a11":
+        return fixed_generic_profile(label, "11")
+    if label == "ua-a11-did-a12":
+        return fixed_generic_profile(label, "11", display_android="12")
+    if label == "ua-a12-did-a11":
+        return fixed_generic_profile(label, "12", display_android="11")
+    if label == "generic-ua-xiaomi-did-a11":
+        return fixed_generic_with_xiaomi_display(label)
+    if label == "xiaomi-ua-generic-did-a11":
+        return fixed_xiaomi_with_generic_display(label)
     if label == "random-generic-a12":
         return random_generic_profile(label, "12")
     if label == "random-generic-a11":
@@ -108,21 +165,41 @@ def build_device(label: str) -> DeviceProfile:
     raise ValueError(f"unknown device label: {label}")
 
 
+PRESET_LABELS = {
+    "all": [
+        "oppo-known-a12",
+        "xiaomi-known-a11",
+        "oneplus-known-a14",
+        "random-oppo-like-a12",
+        "random-xiaomi-like-a11",
+        "random-generic-a12",
+        "random-generic-a11",
+    ],
+    "random": ["random-oppo-like-a12", "random-xiaomi-like-a11", "random-generic-a12", "random-generic-a11"],
+    "android-sweep": ["generic-a10", "generic-a11", "generic-a12", "generic-a13", "generic-a14"],
+    "ram-sweep": ["ram-a11-350", "ram-a11-450", "ram-a11-550", "ram-a11-650", "ram-a11-750", "ram-a11-1124"],
+    "xiaomi-android": ["xiaomi-a10", "xiaomi-a11", "xiaomi-a12", "xiaomi-a13", "xiaomi-a14"],
+    "consistency": [
+        "consistent-generic-a11",
+        "ua-a11-did-a12",
+        "ua-a12-did-a11",
+        "generic-ua-xiaomi-did-a11",
+        "xiaomi-ua-generic-did-a11",
+    ],
+}
+PRESET_LABELS["factor-all"] = (
+    PRESET_LABELS["android-sweep"]
+    + PRESET_LABELS["ram-sweep"]
+    + PRESET_LABELS["xiaomi-android"]
+    + PRESET_LABELS["consistency"]
+)
+
+
 def parse_labels(value: str) -> list[str]:
-    value = value.strip()
-    if value == "all":
-        return [
-            "oppo-known-a12",
-            "xiaomi-known-a11",
-            "oneplus-known-a14",
-            "random-oppo-like-a12",
-            "random-xiaomi-like-a11",
-            "random-generic-a12",
-            "random-generic-a11",
-        ]
-    if value == "random":
-        return ["random-oppo-like-a12", "random-xiaomi-like-a11", "random-generic-a12", "random-generic-a11"]
-    return [item.strip() for item in value.split(",") if item.strip()]
+    labels: list[str] = []
+    for item in [part.strip() for part in value.strip().split(",") if part.strip()]:
+        labels.extend(PRESET_LABELS.get(item, [item]))
+    return labels
 
 
 def classify(row: dict[str, Any]) -> str:
@@ -278,7 +355,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run SMS-only /v2/code experiments with known and random-generated Android device models.")
     parser.add_argument("--country", default="CO", help="random phone country; default CO")
     parser.add_argument("--samples", type=int, default=6, help="samples per device label")
-    parser.add_argument("--labels", default="all", help="all, random, or comma-separated device labels")
+    parser.add_argument("--labels", default="all", help="all, random, android-sweep, ram-sweep, xiaomi-android, consistency, factor-all, or comma-separated labels")
     parser.add_argument("--variant", choices=["current", "ghcr"], default="current")
     parser.add_argument("--patch", default="", help="comma-separated wa_code_param_probe patch names")
     parser.add_argument("--timeout", type=float, default=25)

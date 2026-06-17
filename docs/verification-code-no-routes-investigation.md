@@ -316,6 +316,68 @@
 4. HUAWEI TRT-AL00A / Android 7.0 作为备用
 5. OnePlus LE2100 / Android 14 继续作为负向 baseline
 
+### 12. SMS-only 设备因素拆分：Android / RAM / UA-did 一致性
+
+继续用 `scripts/wa_code_random_device_experiment.py` 增加固定矩阵 label：
+
+- `android-sweep`：固定一个虚构 generic 型号，只扫 Android 10/11/12/13/14，`_gi.did` 与 Android 同步。
+- `ram-sweep`：固定 generic Android 11，只扫 `device_ram`。
+- `xiaomi-android`：固定 Xiaomi M2007J3SC，只扫 Android 10/11/12/13/14。
+- `consistency`：拆 UA 与 `_gi.did` 的一致/错配。
+
+第一轮 factor-all 小样本结果文件：
+
+- `.temp/wa-code-param-experiments/sms-device-factor-all-20260617-145834.summary.json`
+
+关键分组结果：
+
+| 分组 | 总样本 | `sent` | `no_routes` | `blocked` | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `generic-a10` | 4 | 0 | 3 | 1 | 3 | 0/3 |
+| `generic-a11` | 4 | 0 | 1 | 3 | 1 | 0/1 |
+| `generic-a12` | 4 | 0 | 2 | 2 | 2 | 0/2 |
+| `generic-a13` | 4 | 0 | 2 | 2 | 2 | 0/2 |
+| `generic-a14` | 4 | 0 | 2 | 2 | 2 | 0/2 |
+| `xiaomi-a10` | 4 | 0 | 3 | 1 | 3 | 0/3 |
+| `xiaomi-a11` | 4 | 1 | 1 | 2 | 2 | 1/2 |
+| `xiaomi-a12` | 4 | 0 | 4 | 0 | 4 | 0/4 |
+| `xiaomi-a13` | 4 | 1 | 2 | 1 | 3 | 1/3 |
+| `xiaomi-a14` | 4 | 0 | 3 | 1 | 3 | 0/3 |
+| `xiaomi-ua-generic-did-a11` | 4 | 3 | 1 | 0 | 4 | 3/4 |
+| `generic-ua-xiaomi-did-a11` | 4 | 0 | 2 | 2 | 2 | 0/2 |
+
+第一轮里 `xiaomi-ua-generic-did-a11` 异常高，随后做复核。
+
+第二轮只聚焦“已知 Xiaomi UA / generic did / generic UA / random generic”几组：
+
+- `.temp/wa-code-param-experiments/sms-device-model-did-focus-20260617-150222.summary.json`
+
+| 分组 | 总样本 | `sent` | `no_routes` | `blocked` | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `xiaomi-a11` | 8 | 3 | 4 | 1 | 7 | 3/7 |
+| `random-generic-a11` | 8 | 2 | 3 | 3 | 5 | 2/5 |
+| `consistent-generic-a11` | 8 | 0 | 6 | 2 | 6 | 0/6 |
+| `generic-ua-xiaomi-did-a11` | 8 | 0 | 7 | 1 | 7 | 0/7 |
+| `xiaomi-ua-generic-did-a11` | 8 | 0 | 3 | 5 | 3 | 0/3 |
+
+复核后当前判断：
+
+- 仍然不是硬白名单：所有矩阵都没有 `bad_token` / `bad_param`，random generic Android 11 仍然能 `sent`。
+- 但“固定一个完全虚构 generic 型号”明显差：`consistent-generic-a11` 复核 0/6，`generic-ua-xiaomi-did-a11` 复核 0/7。
+- Xiaomi M2007J3SC / Android 11 coherent profile 与每次随机 generic Android 11 都能出 `sent`，两者接近；固定 generic 单型号不稳定。
+- UA 与 `_gi.did` 错配没有稳定收益，第一轮 `xiaomi-ua-generic-did-a11` 的 3/4 未复现，按噪声处理。
+- 单纯 Android 版本或 RAM 不是充分解释项；更像是“UA 机型、Android、display id、RAM、每次安装态材料”的组合评分。
+
+因此更精确的猜测是：WA 侧不像简单硬编码 `model -> android version` 校验；更可能是软风控/路由模型，里面有真实设备分布特征。已知真实机型 coherent profile 更稳；完全随机但每次变化的 Android 11 generic 也可能过；固定虚构单型号和 UA/did 错配明显不优。
+
+后续设备候选优先级调整为：
+
+1. Xiaomi M2007J3SC / Android 11 coherent profile。
+2. 每次安装态随机化的 generic Android 11 profile。
+3. HUAWEI TRT-AL00A / Android 7.0 作为备用。
+4. OPPO CPH2305 / Android 12 只保留待复核，不作为默认。
+5. 避免 OnePlus LE2100 / Android 14、固定虚构 generic 单型号、UA/did 错配组合。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
@@ -339,8 +401,9 @@
 3. **设备 UA / profile 一致性**
    - SMS-only 结果显示设备 UA 是当前最强非 IP 信号，默认 OnePlus 明显偏差。
    - 市面机型复核中 OPPO CPH2305 / Android 12 与 Xiaomi M2007J3SC / Android 11 优于 HUAWEI 与 OnePlus。
-   - 随机未知机型复核中 random generic Android 11 表现最好，说明不知名型号不会硬触发 `no_routes`，但 Android 12 泛化画像较差。
-   - 需要把服务默认 profile 切到 random generic Android 11 或 Xiaomi Android 11 候选画像后，再用服务内 Go 客户端复验。
+   - 随机未知机型说明不知名型号不会硬触发 `no_routes`，但固定虚构单型号复核较差。
+   - 最新拆分显示 Xiaomi M2007J3SC / Android 11 coherent profile 与每次随机化的 generic Android 11 更值得保留；UA/did 错配没有稳定收益。
+   - 需要把服务默认 profile 切到 Xiaomi Android 11 或每次安装态随机化的 generic Android 11 后，再用服务内 Go 客户端复验。
 
 4. **真实客户端 TLS / HTTP 指纹**
    - Python requests 和 curl 都不等同于 Android WhatsApp 网络栈。
@@ -354,7 +417,7 @@
 
 - 继续以 `device-ghcr-defaults` 作为参数底座做外部变量实验。
 - 不再优先验证 `/v2/exist` 是否缺失。
-- 下一轮优先验证：random generic Android 11 / Xiaomi Android 11 候选设备画像、真实客户端/Go 客户端指纹、稳定安装态 profile。
+- 下一轮优先验证：Xiaomi Android 11 coherent profile / 每次安装态随机化 generic Android 11、真实客户端/Go 客户端指纹、稳定安装态 profile。
 - GPIA / WAMSYS / 设备完整性画像后续只在出口和号码质量更稳定后再复验，避免被 `blocked` 号码噪声覆盖。
 - 所有实验结果继续只记录聚合状态与脱敏标识，禁止记录可复用请求材料。
 - 后续 probe 默认使用 signed WASafe envelope；只有做回归对照时才使用 `--unsigned` 或 `--empty-h`。
