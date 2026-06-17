@@ -39,6 +39,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 SERVER_PUBLIC_KEY_HEX = wa_exist_probe.SERVER_PUBLIC_KEY_HEX
 CODE_URL = wa_exist_probe.CODE_URL
 USER_AGENT = "WhatsApp/2.26.23.71 Android/14 Device/OnePlus-LE2100"
+DEVICE_DISPLAY_ID = "LE2100_14.0.0.605(CN01)"
 FORM_SAFE = set(string.ascii_letters + string.digits + "-._~")
 
 ANDROID_KEY_ATTESTATION_OID = ObjectIdentifier("1.3.6.1.4.1.11129.2.1.17")
@@ -72,6 +73,7 @@ class ShapeConfig:
     db: str = "1"
     device_ram: str = "11.24"
     network_radio_type: str = "1"
+    device_display_id: str = DEVICE_DISPLAY_ID
     pid_mode: str = "current"
     operator_mode: str = "zero"
     sim_signal: bool = True
@@ -394,7 +396,7 @@ def build_gpia(material: ProbeMaterial, config: ShapeConfig) -> dict[str, str]:
             ("_iln", config.gpia_data_so_digest),
             ("_isb", NATIVE_GPIA_SOURCE_SIZE),
             ("_ip", NATIVE_GPIA_PACKAGE_NAME),
-            ("did", "LE2100_14.0.0.605(CN01)"),
+            ("did", config.device_display_id),
             ("_p", source_dir),
             ("_ln", NATIVE_GPIA_NATIVE_LIB_DIGEST),
             ("_ist", NATIVE_GPIA_SOURCE_DIGEST),
@@ -931,7 +933,7 @@ def post_code(material: ProbeMaterial, config: ShapeConfig, args: argparse.Names
         result["h_hash"] = envelope.h_hash
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": USER_AGENT,
+        "User-Agent": args.user_agent or USER_AGENT,
         "WaMsysRequest": "1",
         "X-Forwarded-Host": "v.whatsapp.net",
     }
@@ -1023,11 +1025,22 @@ def build_configs(args: argparse.Namespace) -> list[ShapeConfig]:
         config = base
         for patch in patches:
             config = apply_patch_name(config, patch)
-        return [config]
+        return [apply_cli_config_overrides(config, args)]
     matrix = [base]
     for patch in patches:
         matrix.append(apply_patch_name(base, patch))
-    return matrix
+    return [apply_cli_config_overrides(config, args) for config in matrix]
+
+
+def apply_cli_config_overrides(config: ShapeConfig, args: argparse.Namespace) -> ShapeConfig:
+    updates: dict[str, Any] = {}
+    if args.device_display_id:
+        updates["device_display_id"] = args.device_display_id
+    if args.device_ram:
+        updates["device_ram"] = args.device_ram
+    if not updates:
+        return config
+    return replace(config, **updates)
 
 
 def list_patches() -> None:
@@ -1105,6 +1118,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--matrix", action="store_true", help="run baseline plus each patch independently")
     parser.add_argument("--reuse-phones", action="store_true", help="reuse the same random phones across matrix variants; default is fresh phones per variant")
     parser.add_argument("--set", dest="set_param", action="append", default=[], help="override final raw param as key=value; can repeat")
+    parser.add_argument("--user-agent", default="", help="override request User-Agent for device UA experiments")
+    parser.add_argument("--device-display-id", default="", help="override GPIA device display ID used in _gi.did")
+    parser.add_argument("--device-ram", default="", help="override device_ram map parameter")
     parser.add_argument("--omit", action="append", default=[], help="omit final param by key; can repeat")
     parser.add_argument("--unsigned", action="store_true", help="send ENC without H/Authorization for no-auth envelope comparison")
     parser.add_argument("--empty-h", action="store_true", help="send legacy ENC with an empty H value for regression comparison")

@@ -267,6 +267,55 @@
 3. HUAWEI TRT-AL00A / Android 7.0
 4. Samsung SM-G991B / Android 13 作为低优先备用
 
+### 11. SMS-only 随机未知机型实验
+
+为验证“完全不知名设备型号”是否会被硬拒，新增 `scripts/wa_code_random_device_experiment.py`，基于 signed WASafe envelope 只测 SMS：
+
+- known control：`oppo-known-a12`、`xiaomi-known-a11`、`oneplus-known-a14`。
+- vendor-like random：随机 `OPPO CPHxxxx / Android 12`、随机 `Xiaomi MxxxxxxxC/G/I/K / Android 11`。
+- generic random：随机厂商名 + 随机型号，分别固定 Android 11 / Android 12。
+- 每次请求同步改 UA、`_gi.did` display id 和 `device_ram`，输出仍只保留号码 hash/last4、ENC/H hash、display id hash，不记录可复用请求材料。
+
+第一轮粗筛结果文件：
+
+- `.temp/wa-code-param-experiments/sms-random-device-screen-20260617-144621.summary.json`
+
+| 机型标签 | 总样本 | `sent` | `no_routes` | `blocked` | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `xiaomi-known-a11` | 5 | 3 | 0 | 2 | 3 | 3/3 |
+| `random-generic-a11` | 5 | 2 | 2 | 1 | 4 | 2/4 |
+| `random-generic-a12` | 5 | 1 | 3 | 1 | 4 | 1/4 |
+| `random-xiaomi-like-a11` | 5 | 1 | 3 | 1 | 4 | 1/4 |
+| `random-oppo-like-a12` | 5 | 1 | 4 | 0 | 5 | 1/5 |
+| `oppo-known-a12` | 5 | 0 | 5 | 0 | 5 | 0/5 |
+| `oneplus-known-a14` | 5 | 0 | 2 | 3 | 2 | 0/2 |
+
+第二轮聚焦 `random-generic-a11` / `random-generic-a12`，并保留 Xiaomi 与 OnePlus 对照：
+
+- `.temp/wa-code-param-experiments/sms-random-device-focus-20260617-144835.summary.json`
+
+| 机型标签 | 总样本 | `sent` | `no_routes` | `blocked` | 传输错误 | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `random-generic-a11` | 8 | 5 | 2 | 0 | 1 | 7 | 5/7 |
+| `xiaomi-known-a11` | 8 | 2 | 1 | 5 | 0 | 3 | 2/3 |
+| `random-generic-a12` | 8 | 0 | 6 | 2 | 0 | 6 | 0/6 |
+| `oneplus-known-a14` | 8 | 0 | 4 | 4 | 0 | 4 | 0/4 |
+
+当前判断：
+
+- 随机未知型号不会被协议层硬拒：两轮都没有 `bad_token` / `bad_param`，并且 `random-generic-a11` 多次返回 `sent`。
+- “未知型号”本身不是问题；更像是 Android 版本、RAM 区间、display id 形态和整体设备画像共同影响。当前样本里 **random generic Android 11** 明显优于 random generic Android 12。
+- Xiaomi M2007J3SC / Android 11 仍然是稳定候选，但 `blocked` 噪声高；`random-generic-a11` 在第二轮有效决策里表现最好。
+- OPPO CPH2305 / Android 12 在上一节 UA-only 复核好，但这轮同步改 display id / RAM 后没有复现；暂不应直接把“OPPO 一定更好”作为结论。
+
+后续设备候选优先级调整为：
+
+1. random generic Android 11 profile（随机厂商 + 随机型号 + 同步随机 display id / RAM）
+2. Xiaomi M2007J3SC / Android 11
+3. OPPO CPH2305 / Android 12 仅作待复核候选
+4. HUAWEI TRT-AL00A / Android 7.0 作为备用
+5. OnePlus LE2100 / Android 14 继续作为负向 baseline
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
@@ -290,7 +339,8 @@
 3. **设备 UA / profile 一致性**
    - SMS-only 结果显示设备 UA 是当前最强非 IP 信号，默认 OnePlus 明显偏差。
    - 市面机型复核中 OPPO CPH2305 / Android 12 与 Xiaomi M2007J3SC / Android 11 优于 HUAWEI 与 OnePlus。
-   - 需要把服务默认 profile 切到 OPPO/Xiaomi 候选画像后，再用服务内 Go 客户端复验。
+   - 随机未知机型复核中 random generic Android 11 表现最好，说明不知名型号不会硬触发 `no_routes`，但 Android 12 泛化画像较差。
+   - 需要把服务默认 profile 切到 random generic Android 11 或 Xiaomi Android 11 候选画像后，再用服务内 Go 客户端复验。
 
 4. **真实客户端 TLS / HTTP 指纹**
    - Python requests 和 curl 都不等同于 Android WhatsApp 网络栈。
@@ -304,7 +354,7 @@
 
 - 继续以 `device-ghcr-defaults` 作为参数底座做外部变量实验。
 - 不再优先验证 `/v2/exist` 是否缺失。
-- 下一轮优先验证：OPPO/Xiaomi 候选设备画像、真实客户端/Go 客户端指纹、稳定安装态 profile。
+- 下一轮优先验证：random generic Android 11 / Xiaomi Android 11 候选设备画像、真实客户端/Go 客户端指纹、稳定安装态 profile。
 - GPIA / WAMSYS / 设备完整性画像后续只在出口和号码质量更稳定后再复验，避免被 `blocked` 号码噪声覆盖。
 - 所有实验结果继续只记录聚合状态与脱敏标识，禁止记录可复用请求材料。
 - 后续 probe 默认使用 signed WASafe envelope；只有做回归对照时才使用 `--unsigned` 或 `--empty-h`。
