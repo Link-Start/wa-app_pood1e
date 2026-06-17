@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -344,7 +345,7 @@ var nativeDeviceModels = []nativeDeviceModel{
 const nativeDefaultDeviceRAMGiB = "6.58"
 
 func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
-	model := defaultNativeDeviceModel()
+	model := newNativeRegistrationDeviceModel()
 	expIDUUID, expID := uuidPair()
 	accessUUID, accessID := uuidPair()
 	id := randomBytes(20)
@@ -355,7 +356,7 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 		"simnum":                "0",
 		"hasinrc":               "1",
 		"rc":                    "0",
-		"device_ram":            nativeDefaultDeviceRAMGiB,
+		"device_ram":            nativeDeviceRAMGiB(model),
 		"db":                    nativeDefaultDebugBridgeStatus,
 		"recaptcha":             `{"stage":"ABPROP_DISABLED"}`,
 		"feo2_query_status":     nativeDefaultFeo2QueryStatus,
@@ -444,6 +445,24 @@ func randomInt24() int32 {
 		return int32(time.Now().UnixNano() & 0xffffff)
 	}
 	return int32(value.Int64() + 1)
+}
+
+func randomIndex(length int) int {
+	if length <= 1 {
+		return 0
+	}
+	value, err := rand.Int(rand.Reader, big.NewInt(int64(length)))
+	if err != nil {
+		return int(time.Now().UnixNano() % int64(length))
+	}
+	return int(value.Int64())
+}
+
+func randomIntRange(minValue int, maxValue int) int {
+	if maxValue <= minValue {
+		return minValue
+	}
+	return minValue + randomIndex(maxValue-minValue+1)
 }
 
 func newUUIDString() string {
@@ -691,6 +710,69 @@ func nativeDeviceModelFromUserAgent(userAgent string) (nativeDeviceModel, bool) 
 
 func defaultNativeDeviceModel() nativeDeviceModel {
 	return nativeDeviceModels[0]
+}
+
+func newNativeRegistrationDeviceModel() nativeDeviceModel {
+	if randomIndex(2) == 0 {
+		return defaultNativeDeviceModel()
+	}
+	return randomNativeGenericAndroid11DeviceModel()
+}
+
+func randomNativeGenericAndroid11DeviceModel() nativeDeviceModel {
+	model := randomChoice([]string{"X", "A", "M", "N", "Z"}) + randomDigits(4) + randomUpper(2)
+	branch := randomChoice([]string{"GX", "GL", "EEA", "IN", "LA"})
+	return nativeDeviceModel{
+		Vendor:         randomNativeGenericVendor(),
+		Model:          model,
+		Android:        "11",
+		BuildDisplayID: model + "_11.0." + strconv.Itoa(randomIntRange(1, 9)) + "." + strconv.Itoa(randomIntRange(10, 999)) + "(" + branch + "01)",
+		MinRAMGiB:      3.5,
+		MaxRAMGiB:      7.8,
+	}
+}
+
+func randomNativeGenericVendor() string {
+	return randomChoice([]string{"NOVA", "AERO", "ORBI", "LYRA", "VANTA", "ZENO", "NIMO", "KORA", "ALTO", "MEGA"}) +
+		randomChoice([]string{"Mobile", "Phone", "Tech", "One", "Digital", "Comms", "Labs", "Link"})
+}
+
+func randomChoice(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[randomIndex(len(values))]
+}
+
+func randomDigits(length int) string {
+	const alphabet = "0123456789"
+	var builder strings.Builder
+	builder.Grow(length)
+	for range length {
+		builder.WriteByte(alphabet[randomIndex(len(alphabet))])
+	}
+	return builder.String()
+}
+
+func randomUpper(length int) string {
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	var builder strings.Builder
+	builder.Grow(length)
+	for range length {
+		builder.WriteByte(alphabet[randomIndex(len(alphabet))])
+	}
+	return builder.String()
+}
+
+func nativeDeviceRAMGiB(model nativeDeviceModel) string {
+	if model.MinRAMGiB <= 0 || model.MaxRAMGiB < model.MinRAMGiB {
+		return nativeDefaultDeviceRAMGiB
+	}
+	if model.MaxRAMGiB == model.MinRAMGiB {
+		return fmt.Sprintf("%.2f", model.MinRAMGiB)
+	}
+	scaled := int(model.MinRAMGiB*100) + randomIndex(int((model.MaxRAMGiB-model.MinRAMGiB)*100)+1)
+	return fmt.Sprintf("%.2f", float64(scaled)/100)
 }
 
 func nativeBuildDisplayIDForModel(model nativeDeviceModel) string {

@@ -606,16 +606,17 @@
 
 ### 19. wa-app 默认画像改进
 
-根据默认上下文候选复测结果，已将 wa-app 新建 native profile 的默认设备画像从负向 baseline 切到 Xiaomi Android 11：
+根据默认上下文候选复测结果，已将 wa-app 新建 native profile 的默认设备画像从负向 baseline 切到 Android 11 画像池：
 
-- 默认设备从 `OnePlus LE2100 / Android 14` 调整为 `Xiaomi M2007J3SC / Android 11`。
-- 默认 `_gi.did` display id 调整为 `M2007J3SC_11.0.14(CN01)`。
-- 默认 `device_ram` 从 `11.24` 调整为 `6.58`。
+- 新建 profile 会在 `Xiaomi M2007J3SC / Android 11` 与每安装态随机生成的 generic Android 11 画像之间选择。
+- Xiaomi 画像使用 `_gi.did` display id `M2007J3SC_11.0.14(CN01)`。
+- generic Android 11 画像会生成随机 vendor/model/display id 与合理 RAM 区间，生成后随 profile 持久化，同一安装态后续请求不再变化。
+- 默认 `device_ram` fallback 从 `11.24` 调整为 `6.58`；新建 profile 会按所选设备画像写入 RAM。
 - 保持验证码请求默认 `lg=en/lc=US`。
 - 保持默认 operator 为 `mcc/mnc/sim_mcc/sim_mnc=000/000`，不再把 CO operator/locale 作为默认方向。
 - 同步将 probe 脚本的 `current/default` 设备画像改为 Xiaomi A11，避免后续实验默认值再次落回 OnePlus A14。
 
-本次没有自动重写已有持久 profile。原因是已持久化 profile 代表一个安装态，中途把同一安装态从 OnePlus A14 改成 Xiaomi A11 可能产生设备漂移。线上复验时需要用新号码/新注册态，或清理旧的 OnePlus profile 后再验证。
+本次没有自动重写已有持久 profile。原因是已持久化 profile 代表一个安装态，中途把同一安装态从 OnePlus A14 改成 Android 11 画像可能产生设备漂移。线上复验时需要用新号码/新注册态，或清理旧的 OnePlus profile 后再验证。
 
 ## 当前排除项
 
