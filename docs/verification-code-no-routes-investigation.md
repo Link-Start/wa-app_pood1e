@@ -744,6 +744,33 @@
 - 固定 generic A11 与固定 RAM 组合明显偏负，说明“每请求随机 generic A11”比固定虚构单机型更稳。
 - 暂时继续使用 `random generic A11 + 350 + 默认上下文` 作为默认候选，不叠加其它 boost 参数。
 
+
+### 22. wa-app 默认落地与动态代理结论
+
+2026-06-17 已把服务默认新安装态 profile 调整为本轮最佳候选：
+
+- 代码提交：`fec6324 Default new WA profiles to random generic A11`。
+- 部署镜像：`byte-v-forge/wa-app-service:wa-app-20260617192527`。
+- Helm release：`byte-v-forge`，namespace `byte-v-forge`，revision `1442`。
+- 新 profile 默认：每次创建随机 generic Android 11 设备画像。
+- 已持久化 profile：不静默重写，避免既有安装态设备漂移。
+- 请求默认继续保持：signed WASafe envelope、current app version、`lg=en/lc=US`、operator `000/000`、默认 `client_metrics`、无 `/v2/reg_onboard_abprop` 预热。
+- `no_routes` 继续作为失败返回，不再伪装成成功。
+
+动态代理判断：
+
+- 动态代理/租约式出口对 `/v2/code` `sent` 成功率影响很大，是当前最强外部变量之一。
+- 但“动态”本身不是收益点；收益来自干净、低噪声、国家匹配度较好的出口租约。
+- 每请求新租约的实验能显著改善有效决策中的 `sent` 占比，但也会引入出口质量波动。
+- 推荐执行策略是：一次验证码尝试开始时获取一个新租约；若 `/v2/code` 返回 `no_routes` 或传输层失败，释放并在下一次尝试换新租约；若已经 `sent`，同一注册链路的后续 verify/register 尽量保持同一租约，避免链路中途 IP 漂移。
+- `blocked` 仍按号码噪声处理，不作为代理策略有效性判断的核心指标。
+
+当前有效决策参数：
+
+- 能决定的号码样本优先 CO `350` 前缀。
+- 设备画像优先 random generic Android 11，不使用固定 generic 单机型和固定 RAM。
+- 不叠加 `attempts=2`、`db=0`、google-play `client_metrics`、abprop preflight、GHCR/WAMSYS omit 等 boost 项。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
@@ -769,7 +796,7 @@
    - 市面机型复核中 OPPO CPH2305 / Android 12 与 Xiaomi M2007J3SC / Android 11 优于 HUAWEI 与 OnePlus。
    - 随机未知机型说明不知名型号不会硬触发 `no_routes`，但固定虚构单型号复核较差。
    - 最新拆分显示 Xiaomi M2007J3SC / Android 11 coherent profile 与每次随机化的 generic Android 11 更值得保留；UA/did 错配没有稳定收益。
-   - 需要把服务默认 profile 切到 Xiaomi Android 11 或每次安装态随机化的 generic Android 11 后，再用服务内 Go 客户端复验。
+   - 服务默认已切到每次安装态随机化的 generic Android 11；后续继续用服务内 Go 客户端复验动态出口与号码样本的组合效果。
 
 4. **真实客户端 TLS / HTTP 指纹**
    - Python requests 和 curl 都不等同于 Android WhatsApp 网络栈。
@@ -781,9 +808,9 @@
 
 ## 后续建议
 
-- 继续以 `device-ghcr-defaults` 作为参数底座做外部变量实验。
+- 继续以 `random generic Android 11 + 默认 locale/operator + signed WASafe + 无 abprop preflight` 作为服务默认底座做外部变量实验。
 - 不再优先验证 `/v2/exist` 是否缺失。
-- 下一轮优先验证：每请求新租约 + random generic Android 11 + 默认 locale/operator + `350` 前缀；随后再测真实客户端/Go 客户端指纹。
+- 下一轮优先验证：registration attempt 级租约策略 + random generic Android 11 + 默认 locale/operator + 可控号码前缀；随后再测真实客户端/Go 客户端指纹。
 - GPIA / WAMSYS / 设备完整性画像后续只在出口和号码质量更稳定后再复验，避免被 `blocked` 号码噪声覆盖。
 - 所有实验结果继续只记录聚合状态与脱敏标识，禁止记录可复用请求材料。
 - 后续 probe 默认使用 signed WASafe envelope；只有做回归对照时才使用 `--unsigned` 或 `--empty-h`。
