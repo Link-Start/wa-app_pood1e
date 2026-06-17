@@ -225,6 +225,48 @@
 
 因此，后续如果要改服务默认画像，优先考虑当前 app version + HUAWEI 设备 UA / profile，而不是改 `/v2/exist`、IP 或 method。
 
+
+### 10. SMS-only 市面机型 UA 粗筛与复核
+
+继续只测 SMS，保持 app version `2.26.23.71`，只替换设备 UA。`blocked` 按号码自身噪声处理，胜负主要看 `sent / (sent + no_routes)`。
+
+第一轮粗筛覆盖了 HUAWEI、Samsung、Pixel、Xiaomi、Redmi、OPPO、vivo、Motorola、OnePlus 等常见 Android 机型 UA：
+
+- `.temp/wa-code-param-experiments/sms-market-ua-screen-20260617-143445.summary.json`
+
+粗筛中出现 `sent` 的机型：
+
+| 机型 UA 标签 | `sent` | `no_routes` | `blocked` | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `pixel-7-a13` | 2 | 1 | 0 | 3 | 2/3 |
+| `xiaomi-mi10u-a11` | 1 | 1 | 1 | 2 | 1/2 |
+| `oppo-reno7-a12` | 1 | 2 | 0 | 3 | 1/3 |
+
+随后只复核粗筛候选与 OnePlus baseline：
+
+- `.temp/wa-code-param-experiments/sms-market-ua-focus-20260617-143705.summary.json`
+
+| 机型 UA 标签 | 总样本 | `sent` | `no_routes` | `blocked` | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `oppo-reno7-a12` | 12 | 4 | 2 | 6 | 6 | 4/6 |
+| `xiaomi-mi10u-a11` | 10 | 3 | 3 | 4 | 6 | 3/6 |
+| `huawei-trt-al00a-a7` | 11 | 2 | 4 | 5 | 6 | 2/6 |
+| `pixel-7-a13` | 8 | 0 | 6 | 2 | 6 | 0/6 |
+| `oneplus-le2100-a14` | 14 | 0 | 4 | 10 | 4 | 0/4 |
+
+当前判断：
+
+- OnePlus LE2100 仍然是差的 baseline。
+- 复核后最好的 UA 是 **OPPO CPH2305 / Android 12**，其次是 **Xiaomi M2007J3SC / Android 11**，HUAWEI TRT-AL00A 仍可用但不如 OPPO/Xiaomi 这轮稳定。
+- Pixel 7 粗筛好，但复核未复现，暂不作为优先候选。
+
+后续候选优先级：
+
+1. OPPO CPH2305 / Android 12
+2. Xiaomi M2007J3SC / Android 11
+3. HUAWEI TRT-AL00A / Android 7.0
+4. Samsung SM-G991B / Android 13 作为低优先备用
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
@@ -246,8 +288,9 @@
    - 当前材料仍是合成形态，可能与真实客户端特征有差异；该因素应在更稳定的同国家出口或真实客户端指纹下继续复验。
 
 3. **设备 UA / profile 一致性**
-   - SMS-only 结果显示当前 app version + HUAWEI UA 明显优于默认 OnePlus UA。
-   - 需要把服务默认 profile 切到同一 HUAWEI 画像后，再用服务内 Go 客户端复验。
+   - SMS-only 结果显示设备 UA 是当前最强非 IP 信号，默认 OnePlus 明显偏差。
+   - 市面机型复核中 OPPO CPH2305 / Android 12 与 Xiaomi M2007J3SC / Android 11 优于 HUAWEI 与 OnePlus。
+   - 需要把服务默认 profile 切到 OPPO/Xiaomi 候选画像后，再用服务内 Go 客户端复验。
 
 4. **真实客户端 TLS / HTTP 指纹**
    - Python requests 和 curl 都不等同于 Android WhatsApp 网络栈。
@@ -261,7 +304,7 @@
 
 - 继续以 `device-ghcr-defaults` 作为参数底座做外部变量实验。
 - 不再优先验证 `/v2/exist` 是否缺失。
-- 下一轮优先验证：同国家稳定出口、真实客户端/Go 客户端指纹、稳定安装态 profile。
+- 下一轮优先验证：OPPO/Xiaomi 候选设备画像、真实客户端/Go 客户端指纹、稳定安装态 profile。
 - GPIA / WAMSYS / 设备完整性画像后续只在出口和号码质量更稳定后再复验，避免被 `blocked` 号码噪声覆盖。
 - 所有实验结果继续只记录聚合状态与脱敏标识，禁止记录可复用请求材料。
 - 后续 probe 默认使用 signed WASafe envelope；只有做回归对照时才使用 `--unsigned` 或 `--empty-h`。
