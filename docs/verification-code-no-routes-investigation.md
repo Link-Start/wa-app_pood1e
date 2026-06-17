@@ -679,6 +679,71 @@
 
 两轮扩大复核合计：`13/20` 有效决策为 `sent`。因此该候选不是 100% 成功，但仍显著优于本轮其它候选和已知负向项。
 
+### 21. 基于 random A11 + 350 的 boost 单变量有效决策
+
+底座统一为：
+
+- 每请求新 proxy-runtime 租约，`forceNew=true`，请求后立即释放。
+- 号码：CO，前缀 `350`。
+- 设备：每请求随机 generic Android 11。
+- 请求：signed WASafe envelope，current app version `2.26.23.71`。
+- locale/operator：默认 `lg=en/lc=US` 与默认 `000/000` operator。
+- 统计：只把 `sent/no_routes` 算作有效决策；`blocked` 仍作为号码噪声单独记录。
+
+#### 21.1 材料 / metrics / debug 单变量
+
+结果文件：
+
+- `.temp/wa-code-param-experiments/sms-lease-boost-core-20260617-185618.summary.json`
+
+校验：46 条样本有 46 个不同 `lease_hash`，释放状态均为 `released`。
+
+| label | 单变量改动 | 总样本 | `sent` | `no_routes` | `blocked` | 传输错误 | 有效决策数 | `sent / 有效决策` |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `boost-baseline-random-a11-350` | 无，底座 | 5 | 3 | 0 | 1 | 1 | 3 | 3/3 |
+| `boost-ghcr-wamsys` | GPIA/WAMSYS 切 GHCR 形态 | 3 | 2 | 1 | 0 | 0 | 3 | 2/3 |
+| `boost-hasav-zero` | `hasav=0` | 3 | 2 | 1 | 0 | 0 | 3 | 2/3 |
+| `boost-hasinrc-zero` | `hasinrc=0` | 6 | 2 | 1 | 3 | 0 | 3 | 2/3 |
+| `boost-no-sim-signal` | 移除 SIM signal 相关字段 | 5 | 2 | 1 | 1 | 1 | 3 | 2/3 |
+| `boost-omit-wamsys` | 省略 GPIA/WAMSYS 相关字段 | 6 | 2 | 1 | 2 | 1 | 3 | 2/3 |
+| `boost-abprop-then-code` | `/v2/reg_onboard_abprop` 后再 `/v2/code` | 5 | 1 | 2 | 2 | 0 | 3 | 1/3 |
+| `boost-client-metrics-google-play` | `client_metrics` source 改为 google-play | 4 | 1 | 2 | 1 | 0 | 3 | 1/3 |
+| `boost-db-zero` | `db=0` | 5 | 1 | 2 | 1 | 1 | 3 | 1/3 |
+| `boost-client-metrics-attempts-2` | `client_metrics.attempts=2` | 4 | 0 | 3 | 1 | 0 | 3 | 0/3 |
+
+当前判断：
+
+- 本批没有找到优于底座的参数。
+- `abprop` 预热、google-play metrics、`db=0`、`attempts=2` 都偏负。
+- GHCR/omit WAMSYS、no-sim-signal、`hasav/hasinrc=0` 没有明显提升，暂不并入默认。
+
+#### 21.2 设备 / RAM / transport / prefix 单变量
+
+结果文件：
+
+- `.temp/wa-code-param-experiments/sms-lease-boost-device-20260617-190157.summary.json`
+
+校验：39 条样本有 39 个不同 `lease_hash`，释放状态均为 `released`。
+
+| label | 单变量改动 | 总样本 | `sent` | `no_routes` | `blocked` | 传输错误 | 有效决策数 | `sent / 有效决策` |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `boost-random-oppo-like-a12` | 设备改为随机 OPPO-like Android 12 | 6 | 1 | 0 | 5 | 0 | 1 | 1/1 |
+| `boost-baseline-random-a11-350` | 无，底座 | 5 | 2 | 1 | 2 | 0 | 3 | 2/3 |
+| `boost-prefix-301` | 前缀改为 `301` | 4 | 2 | 1 | 0 | 0 | 3 | 2/3 |
+| `boost-random-xiaomi-like-a11` | 设备改为随机 Xiaomi-like Android 11 | 3 | 2 | 1 | 0 | 0 | 3 | 2/3 |
+| `boost-transport-curl` | transport 改为 curl | 3 | 2 | 1 | 0 | 0 | 3 | 2/3 |
+| `boost-transport-curl-http1` | transport 改为 curl HTTP/1.1 | 3 | 1 | 2 | 0 | 0 | 3 | 1/3 |
+| `boost-consistent-generic-a11` | 固定 generic Android 11，不随机机型 | 6 | 0 | 2 | 4 | 0 | 2 | 0/2 |
+| `boost-ram-450` | 固定 generic A11，RAM `4.50` | 3 | 0 | 3 | 0 | 0 | 3 | 0/3 |
+| `boost-ram-650` | 固定 generic A11，RAM `6.50` | 6 | 0 | 2 | 3 | 1 | 2 | 0/2 |
+
+当前判断：
+
+- `random-oppo-like-a12` 只有 1 个有效决策且 blocked 很多，不能据此判定优于底座。
+- `random-xiaomi-like-a11`、`prefix-301`、`curl` 与底座相近，没有明显提升。
+- 固定 generic A11 与固定 RAM 组合明显偏负，说明“每请求随机 generic A11”比固定虚构单机型更稳。
+- 暂时继续使用 `random generic A11 + 350 + 默认上下文` 作为默认候选，不叠加其它 boost 参数。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
