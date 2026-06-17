@@ -618,10 +618,55 @@
 
 本次没有自动重写已有持久 profile。原因是已持久化 profile 代表一个安装态，中途把同一安装态从 OnePlus A14 改成 Android 11 画像可能产生设备漂移。线上复验时需要用新号码/新注册态，或清理旧的 OnePlus profile 后再验证。
 
+### 20. 每请求新租约复核
+
+`whatsapp-reg` 改为 proxy-runtime 租约式入口后，普通数据面请求会复用当前租约；因此新增 `scripts/wa_code_factor_suite.py --lease-per-request`：
+
+- 每个样本先通过 proxy-runtime 控制面 `forceNew=true` 申请动态租约。
+- `/v2/code` 只使用该租约返回的临时代理用户名。
+- 请求完成后立即释放租约。
+- 结果只记录 `lease_hash` / `listener_hash` / 聚合状态，不记录代理 URL、代理密码或原始出口 IP。
+
+#### 20.1 小预算 smoke
+
+结果文件：
+
+- `.temp/wa-code-param-experiments/sms-lease-per-request-20260617-182845.summary.json`
+
+| 组别 | 总样本 | `sent` | `no_routes` | `blocked` | 传输错误 | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `candidate-random-a11-350-default` | 3 | 2 | 0 | 1 | 0 | 2 | 2/2 |
+| `prefix-300` | 2 | 0 | 2 | 0 | 0 | 2 | 0/2 |
+
+校验：5 条样本有 5 个不同 `lease_hash`，释放状态均为 `released`。
+
+#### 20.2 核心因素复核
+
+结果文件：
+
+- `.temp/wa-code-param-experiments/sms-lease-per-request-core-20260617-182946.summary.json`
+
+| 组别 | 总样本 | `sent` | `no_routes` | `blocked` | 传输错误 | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `candidate-random-a11-350-default` | 6 | 3 | 0 | 2 | 1 | 3 | 3/3 |
+| `candidate-xiaomi-350-default` | 6 | 0 | 2 | 4 | 0 | 2 | 0/2 |
+| `prefix-300` | 6 | 0 | 2 | 3 | 1 | 2 | 0/2 |
+| `routing-baseline-350` | 6 | 0 | 1 | 5 | 0 | 1 | 0/1 |
+| `routing-zero-operator` | 6 | 0 | 2 | 4 | 0 | 2 | 0/2 |
+
+校验：30 条样本有 30 个不同 `lease_hash`，释放状态均为 `released`。
+
+当前判断：
+
+- 每请求新租约后，网络复用因素被基本排除；`candidate-random-a11-350-default` 仍保持最佳，有效决策 3/3 `sent`。
+- `prefix-300` 在独立租约下仍稳定 `no_routes`，应继续避免。
+- CO operator / `lg=es,lc=CO` 相关组合没有改善，本轮仍偏 `blocked/no_routes`。
+- 固定 Xiaomi A11 在这一轮不如每请求随机 generic A11；工程默认继续保留“新 profile 随机 A11 池”，避免固定单机型聚集。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
-- 单纯 MCC/MNC 画像不一致：未看到明显影响；但 CO operator + `lg=es/lc=CO` 组合出现正信号，需复核。
+- 单纯 MCC/MNC 画像不一致：未看到明显影响；每请求新租约复核中 CO operator / `lg=es,lc=CO` 没有改善。
 - 单纯号码前缀：不是硬决定项；组合复核后 `350` 明显好于 `314`，后续优先 `350`。
 - 单纯把 Python requests 换成 curl / curl HTTP/1.1：未看到改善。
 - 组合多个 GHCR 形态参数：未优于 `device-ghcr-defaults` 单项。
@@ -657,7 +702,7 @@
 
 - 继续以 `device-ghcr-defaults` 作为参数底座做外部变量实验。
 - 不再优先验证 `/v2/exist` 是否缺失。
-- 下一轮优先验证：Xiaomi Android 11 coherent profile + CO operator + `lg=es/lc=CO` + `350` 前缀 + current WAMSYS/GPIA；随后再测真实客户端/Go 客户端指纹。
+- 下一轮优先验证：每请求新租约 + random generic Android 11 + 默认 locale/operator + `350` 前缀；随后再测真实客户端/Go 客户端指纹。
 - GPIA / WAMSYS / 设备完整性画像后续只在出口和号码质量更稳定后再复验，避免被 `blocked` 号码噪声覆盖。
 - 所有实验结果继续只记录聚合状态与脱敏标识，禁止记录可复用请求材料。
 - 后续 probe 默认使用 signed WASafe envelope；只有做回归对照时才使用 `--unsigned` 或 `--empty-h`。
