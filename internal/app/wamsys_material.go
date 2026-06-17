@@ -40,6 +40,9 @@ const (
 	nativeWamsysSourceAheadSpreadSeconds   = uint64(24)
 	nativeWamsysExternalAheadBaseSeconds   = int64(8400)
 	nativeWamsysExternalAheadSpreadSeconds = uint64(1800)
+	// SHA-256/Base64 over Android 11 PackageInfo.requestedPermissions after
+	// native lexicographic sort and delimiter-free concatenation.
+	nativeWamsysRequestedPermissionsDigest = "NNj5BoWX+yvZBYEY46Ze+Ad6Ykk0Z27FjgSysvkzzCU="
 )
 
 func (localWamsysMaterialProvider) RegistrationMaterial(ctx context.Context, input wamsysMaterialInput) (*waappv1.WamsysCapture, error) {
@@ -69,9 +72,30 @@ func buildLocalWamsysCapture(input wamsysMaterialInput) (*waappv1.WamsysCapture,
 		{Key: "gpia", Value: []byte(gpia.Primary)},
 		{Key: "_ga", Value: ga},
 		{Key: "_gi", Value: []byte(gpia.DeviceCompact)},
+		{Key: "_gp", Value: []byte(nativeWamsysRequestedPermissionsDigest)},
 		{Key: "_ge", Value: []byte(`{"sb":false,"sv":false}`)},
+		{Key: "aid", Value: []byte(nativeWamsysAID(input.State))},
 		{Key: "_gg", Value: []byte(gpia.CodeCompact)},
 	}}, nil
+}
+
+func nativeWamsysAID(state nativeState) string {
+	sum := sha256.Sum256([]byte(nativeSyntheticAndroidID(state)))
+	return b64Std(sum[:])
+}
+
+func nativeSyntheticAndroidID(state nativeState) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		"byte-v-forge-wa-wamsys-android-id/v1",
+		state.Profile.PhoneSHA256,
+		state.Profile.FDID,
+		state.Profile.ExpIDUUID,
+		state.Profile.AccessSessionIDUUID,
+		state.Profile.IDHex,
+		state.Profile.BackupTokenHex,
+		state.AuthKey,
+	}, "|")))
+	return hex.EncodeToString(sum[:8])
 }
 
 func buildLocalWamsysGA(input wamsysMaterialInput) ([]byte, error) {

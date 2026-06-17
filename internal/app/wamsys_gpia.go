@@ -13,14 +13,17 @@ import (
 )
 
 const (
-	nativeGPIAErrorCode       = -2
-	nativeGPIAPackageName     = "com.whatsapp"
-	nativeGPIASourceSize      = "141711087"
-	nativeGPIASourceDigest    = "b3BumN//vPO0GypN5i+xXvNznZyGiXOT99Jip70omCg="
-	nativeGPIACertDigest      = "OKD31QX+GP7GT780Psqq8xDb15k="
-	nativeGPIAClassesDigest   = "qoblldcHz4lA84Sgs1QLZWPpd6YKG25zf0GwJZdTHXk="
-	nativeGPIANativeLibDigest = "G9McgxRaSjtq92o7zx0fbf3Ak7+SPmxxNyvNXS01hlM="
-	nativeGPIADataSODigest    = "SrL/HHWX9VAinH9OV4eloGSQLWSsUug93h5YGGad17s="
+	nativeGPIAErrorCode    = -2
+	nativeGPIAPackageName  = "com.whatsapp"
+	nativeGPIASourceSize   = "141711087"
+	nativeGPIASourceDigest = "b3BumN//vPO0GypN5i+xXvNznZyGiXOT99Jip70omCg="
+	// Full app-release APK SHA-256/Base64; native bootstrap stores this in
+	// global 0xc45a48 for GPIA sha256/_is.
+	nativeGPIASourceFullDigest = "vJrNuYDSuWUZ87O1W5+xs/2g74mwPA2JO+dkqjlJZG4="
+	nativeGPIACertDigest       = "OKD31QX+GP7GT780Psqq8xDb15k="
+	nativeGPIAClassesDigest    = "qoblldcHz4lA84Sgs1QLZWPpd6YKG25zf0GwJZdTHXk="
+	nativeGPIANativeLibDigest  = "G9McgxRaSjtq92o7zx0fbf3Ak7+SPmxxNyvNXS01hlM="
+	nativeGPIADataSODigest     = "SrL/HHWX9VAinH9OV4eloGSQLWSsUug93h5YGGad17s="
 )
 
 type nativeGPIAMaterial struct {
@@ -44,6 +47,7 @@ func buildNativeGPIAErrorMaterial(input wamsysMaterialInput) (nativeGPIAMaterial
 		{Key: "shatr", Value: nativeGPIASourceDigest},
 		{Key: "p", Value: sourceDir},
 		{Key: "cert", Value: nativeGPIACertDigest},
+		{Key: "sha256", Value: nativeGPIASourceFullDigest},
 	}
 	logNativeGPIAPlaintextShape(input, "primary_long", keySource, primaryFields)
 	primary, err := encryptNativeGPIAJSON(keySource, primaryFields)
@@ -68,6 +72,7 @@ func buildNativeGPIAErrorMaterial(input wamsysMaterialInput) (nativeGPIAMaterial
 		{Key: "_ln", Value: nativeGPIANativeLibDigest},
 		{Key: "_ist", Value: nativeGPIASourceDigest},
 		{Key: "_icr", Value: nativeGPIACertDigest},
+		{Key: "_is", Value: nativeGPIASourceFullDigest},
 	}
 	logNativeGPIAPlaintextShape(input, "device_compact", keySource, deviceCompactFields)
 	deviceCompact, err := encryptNativeGPIAJSON(keySource, deviceCompactFields)

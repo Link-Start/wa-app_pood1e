@@ -804,7 +804,7 @@
 
 本次复核还确认：
 
-- clean smali final map 的 WAMSYS 追加顺序已确认；当前无 Android 设备依赖的运行路径只发送来源闭环的 WAMSYS 子集，`_gp/aid` 等未知来源字段必须继续逆向确认来源后再实现。
+- clean smali final map 的 WAMSYS 追加顺序已确认；当时 `_gp/aid` 未闭环，先从本地 provider 移除，后续继续追 native source。
 - `requestHash` 与 native AES key source 都绑定 AuthKey client static keypair；Go 中 `AuthKey == ChatStatic.Public`，用 ChatStatic private 派生 public 后作为 key source 与逆向语义一致。
 - `source APK size`、`source SHA-256` 与 `classes.dex SHA-256` 常量仍匹配当前 `app-release.apk`。
 - 仍需后续单变量验证：`/v2/exist` 前置、failed transient state 复用、WAMSYS `_ga` 运行态 path age、真实 Play token 成功路径是否出现 `_it/_hp`。
@@ -837,6 +837,9 @@
 | GPIA `did` | native helper 读取 `ro.build.display.id` | 使用 profile 的 `BuildDisplayID`，其语义是合成 Android runtime display id |
 | `_ga` key order 与字段语义 | native helper：`bi,ap,ai,mp,ae,mu` | key order 已对齐；path age 不再绑定尝试次数 |
 | `_ge` 当前样本 shape | root/vm probe shape | 当前默认 `{"sb":false,"sv":false}`，仅作为当前非 root/vm 运行态形态 |
+| `_gp` | `PackageInfo.requestedPermissions` 排序、无分隔符拼接后 SHA-256/Base64 | 已按 Android 11 `PackageInfo.requestedPermissions` 运行时数组 digest 恢复 |
+| `aid` | `Settings.Secure.getString(contentResolver,"android_id")` 后 SHA-256/Base64 | 产品不依赖 Android 设备；本地 provider 使用稳定 synthetic android_id 输入后按 native transform 生成 |
+| GPIA `sha256` / `_is` | reg bootstrap `jvidispatchIOO(6)` 写入 `0xc45a48`；值为 `sourceDir` 完整文件 SHA-256/Base64 | 已按当前 APK full SHA-256/Base64 恢复到 primary/device compact GPIA JSON |
 | `db` | AB-gated `Settings.Global` debug bridge status | 当前默认长度 1，值为 `1` |
 | `recaptcha` | `FBP` state JSON；disabled path 样本 | 当前 disabled path `{"stage":"ABPROP_DISABLED"}` |
 
@@ -844,13 +847,10 @@
 
 | 字段/材料 | 已确认内容 | 未闭环点 | 当前处理原则 |
 | --- | --- | --- | --- |
-| `aid` | `FQr.A0S.WAMSYS` native map 中存在，长度 44 | 具体 native source 未在当前 handoff 中定位；不能把“Android ID-ish SHA-256”当结论 | 本地合成 provider 不再发送；必须补齐 native source 后再实现，不能作为无 Android 依赖路径的猜测字段 |
-| `_gp` | WAMSYS native map 中存在，长度 44 | 当前 reverse 只确认长度/位置，未记录 raw source 算法 | 本地合成 provider 不再发送；必须补齐 native source 后再实现，不能作为无 Android 依赖路径的猜测字段 |
-| GPIA `sha256` / `_is` | error-only serializer 中存在，长度 44，来自 native global slot `0xc45a48` | 当前资料未证明它等于 `SHA-256(sourceDir path)` | 本地 GPIA error material 不再发送；需要补 native/global slot hook 后才能恢复 |
 | GPIA JSON slash escaping | serializer 走 `org.json.JSONObject.toString()` | 当前只记录 byte length/key order/type length；加密 block 长度不能反推出 slash escaping | 暂不根据长度猜测切换实现 |
 | Play token success path `_it/_hp` | error-only 样本未出现；成功路径可能出现 | `_hp` value 依赖 feature/global/runtime/rand stream，当前没有成功路径样本 | 不添加 `_it/_hp`，直到成功路径 value-safe hook 证实 |
 
-结论：本轮落地两类变更：`pid` 改为已闭环的 `Process.myPid()`；`aid`、`_gp`、GPIA `sha256/_is` 从本地合成 provider / probe current 形态移除。当前产品运行路径不依赖 Android 设备采集材料；后续如果缺这些字段导致 `no_routes`，只能继续逆向补齐 source，不能再用 path digest、Android-ID digest 或实验命中率把猜测写成结论。
+结论：本轮先落地两类变更：`pid` 改为已闭环的 `Process.myPid()`；当时未闭环的 `aid`、`_gp`、GPIA `sha256/_is` 从本地合成 provider / probe current 形态移除。后续继续逆向补齐 source 后，已按 27.1 的闭环来源恢复这些字段；当前产品运行路径仍不依赖 Android 设备采集材料。
 
 ## 当前排除项
 

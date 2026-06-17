@@ -56,11 +56,13 @@ NATIVE_ATTESTATION_SIGNATURE_MAX_ATTEMPTS = 64
 NATIVE_GPIA_PACKAGE_NAME = "com.whatsapp"
 NATIVE_GPIA_SOURCE_SIZE = "141711087"
 NATIVE_GPIA_SOURCE_DIGEST = "b3BumN//vPO0GypN5i+xXvNznZyGiXOT99Jip70omCg="
+NATIVE_GPIA_SOURCE_FULL_DIGEST = "vJrNuYDSuWUZ87O1W5+xs/2g74mwPA2JO+dkqjlJZG4="
 NATIVE_GPIA_CERT_DIGEST = "OKD31QX+GP7GT780Psqq8xDb15k="
 NATIVE_GPIA_CLASSES_DIGEST = "qoblldcHz4lA84Sgs1QLZWPpd6YKG25zf0GwJZdTHXk="
 NATIVE_GPIA_NATIVE_LIB_DIGEST = "G9McgxRaSjtq92o7zx0fbf3Ak7+SPmxxNyvNXS01hlM="
 CURRENT_GPIA_DATA_SO_DIGEST = "SrL/HHWX9VAinH9OV4eloGSQLWSsUug93h5YGGad17s="
 GHCR_GPIA_DATA_SO_DIGEST = "0j9kw9djlCtmCCavV7go2wwge+2os853ubiE7F7Dew4="
+CURRENT_WAMSYS_REQUESTED_PERMISSIONS_DIGEST = "NNj5BoWX+yvZBYEY46Ze+Ad6Ykk0Z27FjgSysvkzzCU="
 CURRENT_WAMSYS_AGE_BUCKET_SECONDS = 300
 CURRENT_WAMSYS_FRESH_PROFILE_MAX_AGE_SECONDS = 600
 CURRENT_WAMSYS_DATA_AGE_MIN_SECONDS = 30
@@ -385,6 +387,7 @@ def build_gpia(material: ProbeMaterial, config: ShapeConfig) -> dict[str, str]:
             ("shatr", NATIVE_GPIA_SOURCE_DIGEST),
             ("p", source_dir),
             ("cert", NATIVE_GPIA_CERT_DIGEST),
+            ("sha256", NATIVE_GPIA_SOURCE_FULL_DIGEST),
         ],
         config,
     )
@@ -401,6 +404,7 @@ def build_gpia(material: ProbeMaterial, config: ShapeConfig) -> dict[str, str]:
             ("_ln", NATIVE_GPIA_NATIVE_LIB_DIGEST),
             ("_ist", NATIVE_GPIA_SOURCE_DIGEST),
             ("_icr", NATIVE_GPIA_CERT_DIGEST),
+            ("_is", NATIVE_GPIA_SOURCE_FULL_DIGEST),
         ],
         config,
     )
@@ -506,6 +510,26 @@ def build_ghcr_ga(material: ProbeMaterial, config: ShapeConfig) -> str:
     return render_ordered_json(fields, config.gpia_escape_slash)
 
 
+def current_android_id(material: ProbeMaterial) -> str:
+    seed = "|".join(
+        [
+            "byte-v-forge-wa-wamsys-android-id/v1",
+            material.phone_sha256,
+            material.fdid,
+            material.expid_uuid,
+            material.access_session_id_uuid,
+            material.id_hex,
+            material.backup_token_hex,
+            material.authkey,
+        ]
+    )
+    return hashlib.sha256(seed.encode()).digest()[:8].hex()
+
+
+def current_wamsys_aid(material: ProbeMaterial) -> str:
+    return b64std(hashlib.sha256(current_android_id(material).encode()).digest())
+
+
 def build_wamsys(material: ProbeMaterial, config: ShapeConfig) -> dict[str, str]:
     gpia = build_gpia(material, config)
     if config.wamsys_values == "ghcr":
@@ -523,10 +547,12 @@ def build_wamsys(material: ProbeMaterial, config: ShapeConfig) -> dict[str, str]
             "gpia": gpia["gpia"],
             "_ga": build_current_ga(material, config),
             "_gi": gpia["_gi"],
+            "_gp": CURRENT_WAMSYS_REQUESTED_PERMISSIONS_DIGEST,
             "_ge": '{"sb":false,"sv":false}',
+            "aid": current_wamsys_aid(material),
             "_gg": gpia["_gg"],
         }
-    order = ["gpia", "_ge", "_gi", "_gg", "_gp", "_ga", "aid"] if config.wamsys_order == "ghcr" else ["gpia", "_ga", "_gi", "_ge", "_gg"]
+    order = ["gpia", "_ge", "_gi", "_gg", "_gp", "_ga", "aid"] if config.wamsys_order == "ghcr" else ["gpia", "_ga", "_gi", "_gp", "_ge", "aid", "_gg"]
     return {key: values[key] for key in order if key in values}
 
 
