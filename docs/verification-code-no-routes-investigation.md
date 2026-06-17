@@ -87,6 +87,60 @@
 
 结论只能说明 curl 不是明显改善项，不能排除真实 Android WhatsApp TLS/HTTP 指纹仍是关键因素。
 
+
+### 7. GPIA / WAMSYS / 设备完整性画像
+
+后续按“`blocked` 多数是号码自身问题”的口径重算：`blocked` 只作为号码噪声记录，参数胜负主要看 `sent / (sent + no_routes)`。
+
+完整性画像分组包括：
+
+- `current`：当前默认画像。
+- `device-ghcr`：只切换设备基础字段到早期 GHCR 形态。
+- `gpia-ghcr-bundle`：只切换 GPIA 相关字段到早期 GHCR 形态。
+- `wamsys-ghcr`：只切换 WAMSYS tail 到早期 GHCR 形态。
+- `gpia+wamsys-ghcr`：GPIA 与 WAMSYS 同时切换。
+- `device+gpia+wamsys-ghcr`：设备、GPIA、WAMSYS 同时切换。
+- `full-ghcr`：完整早期 GHCR 请求形态。
+
+第一轮小样本结果文件：
+
+- `.temp/wa-code-param-experiments/stable-exit-integrity-profile-20260617-134922.summary.json`
+
+按非 `blocked` 决策重算后：
+
+| 组别 | 总样本 | `sent` | `no_routes` | `blocked` | `sent / (sent + no_routes)` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `current` | 8 | 0 | 6 | 2 | 0/6 |
+| `device-ghcr` | 8 | 1 | 6 | 1 | 1/7 |
+| `gpia-ghcr-bundle` | 8 | 0 | 4 | 4 | 0/4 |
+| `wamsys-ghcr` | 8 | 0 | 2 | 6 | 0/2 |
+| `gpia+wamsys-ghcr` | 8 | 1 | 3 | 4 | 1/4 |
+| `device+gpia+wamsys-ghcr` | 8 | 0 | 6 | 2 | 0/6 |
+| `full-ghcr` | 8 | 0 | 5 | 3 | 0/5 |
+
+第一轮里 `device-ghcr` 和 `gpia+wamsys-ghcr` 都出现过 `sent`，但样本太小，且 `blocked` 噪声较高。
+
+第二轮验证了省略完整性字段是否会被协议层硬拒，结果文件：
+
+- `.temp/wa-code-param-experiments/stable-exit-integrity-omit-20260617-135221.summary.json`
+
+省略 `gpia/_gg/_gi`、省略 `_ga/_gp/_ge/aid`、或省略全部完整性字段，都没有出现 `bad_param` / `missing_param`。这说明这些字段不是当前代理层的硬必填校验项；但省略后也没有带来 `sent`。
+
+第三轮按目标决策数做复核，`blocked` 不参与胜负，每个核心组尽量收集 8 个 `sent/no_routes` 决策，结果文件：
+
+- `.temp/wa-code-param-experiments/stable-exit-integrity-target-decisions-20260617-135444.summary.json`
+
+| 组别 | 总样本 | `sent` | `no_routes` | `blocked` | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `current` | 16 | 0 | 6 | 10 | 6 | 0/6 |
+| `device-ghcr` | 12 | 0 | 8 | 4 | 8 | 0/8 |
+| `gpia+wamsys-ghcr` | 16 | 0 | 8 | 8 | 8 | 0/8 |
+| `device+gpia+wamsys-ghcr` | 12 | 0 | 8 | 4 | 8 | 0/8 |
+
+复核轮没有复现第一轮的 `sent`。因此当前不能证明 GPIA / WAMSYS / 设备完整性画像调整能稳定降低 `no_routes` 或提升 `sent`。
+
+当前判断：完整性画像仍可能有影响，但在这个稳定出口和随机 CO 号码条件下，信号不稳定；更可能被号码质量、出口国家/ASN 或真实客户端指纹噪声覆盖。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
@@ -102,8 +156,8 @@
    - 后续应优先使用与号码国家一致、且质量稳定的出口做复验。
 
 2. **GPIA / WAMSYS / 设备完整性画像**
-   - 当前材料是合成形态，可能仍与真实客户端特征有差异。
-   - 即使不走 Play Integrity Standard token，native GPIA / WAMSYS 字段仍可能参与风控。
+   - 已做分组验证，但信号没有稳定复现，暂不能证明它是主因。
+   - 当前材料仍是合成形态，可能与真实客户端特征有差异；该因素应在更稳定的同国家出口或真实客户端指纹下继续复验。
 
 3. **真实客户端 TLS / HTTP 指纹**
    - Python requests 和 curl 都不等同于 Android WhatsApp 网络栈。
@@ -118,4 +172,5 @@
 - 继续以 `device-ghcr-defaults` 作为参数底座做外部变量实验。
 - 不再优先验证 `/v2/exist` 是否缺失。
 - 下一轮优先验证：同国家稳定出口、真实客户端/Go 客户端指纹、稳定安装态 profile。
+- GPIA / WAMSYS / 设备完整性画像后续只在出口和号码质量更稳定后再复验，避免被 `blocked` 号码噪声覆盖。
 - 所有实验结果继续只记录聚合状态与脱敏标识，禁止记录可复用请求材料。
