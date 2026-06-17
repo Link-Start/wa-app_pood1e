@@ -511,6 +511,68 @@
 
 判断：这轮“轮转出口”没有恢复 `sent`，且出口 hash 未变化；继续大样本会继续把参数实验和出口信誉/粘性混在一起。后续需要确认代理是否支持按请求强制切换会话，或改用明确不同出口后再复测。
 
+### 17. 轮转出口修复后复测
+
+用户重新配置轮转出口后，先只做出口 hash 探测：8 次探测出现 6 个不同出口 hash，说明轮转已生效；其中 2 次探测失败，说明轮转池内仍有少量不可用或不稳定出口。
+
+随后做三组小样本 SMS `/v2/code` 复测。
+
+#### 17.1 旧最优 combo 复测
+
+固定旧最优底座：`Xiaomi A11 + CO operator 732/101 + lg=es/lc=CO + 350 + current WAMSYS/GPIA`。
+
+结果文件：
+
+- `.temp/wa-code-param-experiments/sms-rotating-v2-best350-current-20260617-154346.summary.json`
+
+| 组别 | 总样本 | `sent` | `no_routes` | `blocked` | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `combo-350-current` | 10 | 0 | 2 | 8 | 2 | 0/2 |
+
+轮转出口修复后，旧最优 combo 没有恢复 `sent`。
+
+#### 17.2 设备 sanity 对照
+
+使用默认国家上下文与随机 CO 号码，只对比 Xiaomi A11 与每次随机 generic Android 11。
+
+结果文件：
+
+- `.temp/wa-code-param-experiments/sms-rotating-v2-device-sanity-20260617-154452.summary.json`
+
+| 组别 | 总样本 | `sent` | `no_routes` | `blocked` | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `device-random-generic-a11` | 5 | 3 | 0 | 2 | 3 | 3/3 |
+| `device-xiaomi-a11` | 6 | 2 | 1 | 3 | 3 | 2/3 |
+
+这说明 signed WASafe envelope、当前 app version、H、token 和整体请求链路并没有硬失败；在轮转出口下仍可以稳定拿到 `sent`。
+
+#### 17.3 prefix/context 拆分
+
+固定 Xiaomi A11，只拆 350/300/301 前缀与 CO operator/locale 组合。
+
+结果文件：
+
+- `.temp/wa-code-param-experiments/sms-rotating-v2-prefix-context-focus-20260617-154614.summary.json`
+
+| 组别 | 含义 | 总样本 | `sent` | `no_routes` | `blocked` | 传输错误 | 有效决策数 | `sent / 有效决策` |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `prefix-300` | 默认上下文 + 300 | 3 | 0 | 3 | 0 | 0 | 3 | 0/3 |
+| `prefix-301` | 默认上下文 + 301 | 8 | 1 | 1 | 4 | 2 | 2 | 1/2 |
+| `prefix-350` | 默认上下文 + 350 | 8 | 1 | 0 | 6 | 1 | 1 | 1/1 |
+| `routing-baseline-350` | CO operator + `lg=es/lc=CO` + 350 | 6 | 0 | 3 | 2 | 1 | 3 | 0/3 |
+| `routing-us-locale` | CO operator + default `lg=en/lc=US` + 350 | 3 | 1 | 2 | 0 | 0 | 3 | 1/3 |
+| `routing-zero-operator` | zero operator + `lg=es/lc=CO` + 350 | 8 | 0 | 2 | 5 | 1 | 2 | 0/2 |
+
+当前判断：
+
+- 轮转出口修好后，`sent` 可以复现，说明上一轮 sticky 出口确实是重要噪声。
+- 旧组合 `CO operator + lg=es/lc=CO + 350` 现在反而稳定偏 `no_routes`，不再应作为默认。
+- `lg=es/lc=CO` 是当前最可疑负向因素：`zero operator + es/CO` 和 `CO operator + es/CO` 都没有 `sent`；而 default locale 下的 350 能 `sent`。
+- `prefix 300` 当前全 `no_routes`，继续避免；`301/350` 在默认上下文下仍可出 `sent`。
+- 轮转池有少量坏出口，出现 SSL EOF、wrong version、timeout；后续实验需要继续记录 transport_error，不能把它算作 WA 业务决策。
+
+下一步如果要改服务默认画像，应优先恢复为默认 locale/operator，不强行设置 `lg=es/lc=CO` 和 CO operator；设备画像继续优先 random generic Android 11 或 Xiaomi A11。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
