@@ -809,6 +809,16 @@
 - `source APK size`、`source SHA-256` 与 `classes.dex SHA-256` 常量仍匹配当前 `app-release.apk`。
 - 仍需后续单变量验证：`/v2/exist` 前置、failed transient state 复用、WAMSYS `_ga` 运行态 path age、真实 Play token 成功路径是否出现 `_it/_hp`。
 
+### 26. 字段生成细化对齐：`_ga` path age 与脚本基线
+
+2026-06-18 继续对齐脚本与 wa-app 的本地字段生成，重点修正 `_ga` 里的运行态 path age：
+
+- 逆向材料显示 `_ga.ap/_ga.ai/_ga.ae` 来自 native path status/age helper，语义是 source/data/external 路径状态，不是 `/v2/code` 尝试次数。
+- wa-app 之前为了让合成 path age 具备波动性，把 `GenerateCodeAttempts` 混入 `_ga` age offset seed；这会导致同一安装态重试时 `_ga` age 因尝试次数跳变，不符合文件 mtime age 的语义。
+- 已移除 `_ga` age offset 对 `GenerateCodeAttempts` 的依赖；后续同一 5 分钟 bucket 内，除真实 profile age 进入 `30-600s` 窗口外，path age 不再因重试次数变化。
+- `scripts/wa_code_param_probe.py` 的 current `_ga` 生成同步从固定样本值 `ap=72,ai=54,ae=8496` 改为与 wa-app 相同的动态 bucket/seed 逻辑，后续脚本与服务日志的 `_ga` shape 可直接比较。
+- GPIA serializer 的 slash escaping 暂不改动：当前 reverse 只记录 key order/type/value length 与 JSON byte length，外层加密长度不会区分 305/310/313 这类同 block 的 plaintext 差异；在拿到更精确 serializer 证据前不为长度猜测切换实现。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。

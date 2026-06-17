@@ -138,7 +138,6 @@ func nativeWamsysRuntimeOffset(input wamsysMaterialInput, label string, base int
 		"byte-v-forge-wa-wamsys-runtime-path-age/v1",
 		label,
 		fmt.Sprintf("%d", input.Kind),
-		fmt.Sprintf("%d", input.State.GenerateCodeAttempts),
 		fmt.Sprintf("%d", bucket),
 		phoneCC(input.Phone),
 		phoneNational(input.Phone),

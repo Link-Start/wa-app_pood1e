@@ -62,6 +62,16 @@ NATIVE_GPIA_NATIVE_LIB_DIGEST = "G9McgxRaSjtq92o7zx0fbf3Ak7+SPmxxNyvNXS01hlM="
 CURRENT_GPIA_DATA_SO_DIGEST = "SrL/HHWX9VAinH9OV4eloGSQLWSsUug93h5YGGad17s="
 GHCR_GPIA_DATA_SO_DIGEST = "0j9kw9djlCtmCCavV7go2wwge+2os853ubiE7F7Dew4="
 CURRENT_WAMSYS_REQUESTED_PERMISSIONS_DIGEST = "NNj5BoWX+yvZBYEY46Ze+Ad6Ykk0Z27FjgSysvkzzCU="
+CURRENT_WAMSYS_AGE_BUCKET_SECONDS = 300
+CURRENT_WAMSYS_FRESH_PROFILE_MAX_AGE_SECONDS = 600
+CURRENT_WAMSYS_DATA_AGE_MIN_SECONDS = 30
+CURRENT_WAMSYS_DATA_AGE_BASE_SECONDS = 54
+CURRENT_WAMSYS_DATA_AGE_SPREAD_SECONDS = 36
+CURRENT_WAMSYS_SOURCE_AHEAD_BASE_SECONDS = 8
+CURRENT_WAMSYS_SOURCE_AHEAD_SPREAD_SECONDS = 24
+CURRENT_WAMSYS_EXTERNAL_AHEAD_BASE_SECONDS = 8400
+CURRENT_WAMSYS_EXTERNAL_AHEAD_SPREAD_SECONDS = 1800
+REGISTRATION_REQUEST_KIND_CODE = 2
 
 ARGENTINA_AREA_CODES = ("11", "221", "223", "261", "291", "341", "351", "381")
 COLOMBIA_MOBILE_PREFIXES = ("300", "301", "302", "304", "305", "310", "311", "312", "313", "314", "315", "316", "317", "318", "320", "321", "322", "323", "350", "351")
@@ -460,11 +470,63 @@ def current_android_id(material: ProbeMaterial) -> str:
     return f"{int.from_bytes(hashlib.sha256(seed.encode()).digest()[:8], 'big'):016x}"
 
 
+def current_wamsys_runtime_offset(material: ProbeMaterial, label: str, base: int, spread: int, now: int) -> int:
+    if spread <= 0:
+        return base
+    bucket = now // CURRENT_WAMSYS_AGE_BUCKET_SECONDS
+    seed = "|".join(
+        [
+            "byte-v-forge-wa-wamsys-runtime-path-age/v1",
+            label,
+            str(REGISTRATION_REQUEST_KIND_CODE),
+            str(bucket),
+            material.cc,
+            material.national,
+            material.phone_sha256,
+            material.fdid,
+            material.access_session_id_uuid,
+            material.authkey,
+        ]
+    )
+    return base + int.from_bytes(hashlib.sha256(seed.encode()).digest()[:8], "big") % spread
+
+
+def current_wamsys_path_ages(material: ProbeMaterial, now: int | None = None) -> tuple[int, int, int]:
+    current = int(time.time()) if now is None else now
+    profile_age = current - material.created_at_unix
+    if CURRENT_WAMSYS_DATA_AGE_MIN_SECONDS <= profile_age <= CURRENT_WAMSYS_FRESH_PROFILE_MAX_AGE_SECONDS:
+        data_age = profile_age
+    else:
+        data_age = current_wamsys_runtime_offset(
+            material,
+            "data-dir-age",
+            CURRENT_WAMSYS_DATA_AGE_BASE_SECONDS,
+            CURRENT_WAMSYS_DATA_AGE_SPREAD_SECONDS,
+            current,
+        )
+    source_age = data_age + current_wamsys_runtime_offset(
+        material,
+        "source-data-age-delta",
+        CURRENT_WAMSYS_SOURCE_AHEAD_BASE_SECONDS,
+        CURRENT_WAMSYS_SOURCE_AHEAD_SPREAD_SECONDS,
+        current,
+    )
+    external_age = data_age + current_wamsys_runtime_offset(
+        material,
+        "external-data-age-delta",
+        CURRENT_WAMSYS_EXTERNAL_AHEAD_BASE_SECONDS,
+        CURRENT_WAMSYS_EXTERNAL_AHEAD_SPREAD_SECONDS,
+        current,
+    )
+    return source_age, data_age, external_age
+
+
 def build_current_ga(material: ProbeMaterial, config: ShapeConfig) -> str:
     key_source = gpia_key_source(material)
     boot_id = current_boot_id(material)
     bi = aes_cbc_pkcs7_encrypt(key_source, boot_id.encode())
-    fields = [("bi", bi), ("ap", 72), ("ai", 54), ("mp", False), ("ae", 8496), ("mu", False)]
+    source_age, data_age, external_age = current_wamsys_path_ages(material)
+    fields = [("bi", bi), ("ap", source_age), ("ai", data_age), ("mp", False), ("ae", external_age), ("mu", False)]
     return render_ordered_json(fields, config.gpia_escape_slash)
 
 
