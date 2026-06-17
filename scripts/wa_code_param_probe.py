@@ -48,6 +48,7 @@ GHCR_GPIA_DATA_SO_DIGEST = "0j9kw9djlCtmCCavV7go2wwge+2os853ubiE7F7Dew4="
 CURRENT_WAMSYS_REQUESTED_PERMISSIONS_DIGEST = "NNj5BoWX+yvZBYEY46Ze+Ad6Ykk0Z27FjgSysvkzzCU="
 
 ARGENTINA_AREA_CODES = ("11", "221", "223", "261", "291", "341", "351", "381")
+COLOMBIA_MOBILE_PREFIXES = ("300", "301", "302", "304", "305", "310", "311", "312", "313", "314", "315", "316", "317", "318", "320", "321", "322", "323", "350", "351")
 SENSITIVE_KEY_RE = re.compile(r"(token|cookie|session|auth|key|sig|code|gpia|_g[aeigp]|aid)", re.I)
 
 
@@ -195,6 +196,11 @@ def random_argentina_phone() -> tuple[str, str]:
     return "54", "9" + area + first + rest
 
 
+def random_colombia_phone() -> tuple[str, str]:
+    prefix = random.choice(COLOMBIA_MOBILE_PREFIXES)
+    return "57", prefix + "".join(str(random.randint(0, 9)) for _ in range(7))
+
+
 def normalize_phone(value: str, default_cc: str) -> tuple[str, str]:
     digits = re.sub(r"\D+", "", value)
     if not digits:
@@ -210,9 +216,11 @@ def phone_inputs(args: argparse.Namespace) -> list[tuple[str, str]]:
     if args.phone:
         return [normalize_phone(phone, args.cc) for phone in args.phone]
     country = args.country.upper()
-    if country != "AR":
-        raise ValueError("only --country AR random generation is implemented; pass --phone for custom numbers")
-    return [random_argentina_phone() for _ in range(args.count)]
+    if country == "AR":
+        return [random_argentina_phone() for _ in range(args.count)]
+    if country == "CO":
+        return [random_colombia_phone() for _ in range(args.count)]
+    raise ValueError("only --country AR/CO random generation is implemented; pass --phone for custom numbers")
 
 
 def uuid_pair() -> tuple[str, str]:
@@ -480,6 +488,8 @@ def operator_fields(config: ShapeConfig) -> dict[str, str]:
         return {}
     if config.operator_mode == "ar722310":
         return {"mcc": "722", "mnc": "310", "sim_mcc": "722", "sim_mnc": "310"}
+    if config.operator_mode == "co732101":
+        return {"mcc": "732", "mnc": "101", "sim_mcc": "732", "sim_mnc": "101"}
     return {"mcc": "000", "mnc": "000", "sim_mcc": "000", "sim_mnc": "000"}
 
 
@@ -739,6 +749,7 @@ def apply_patch_name(config: ShapeConfig, patch: str) -> ShapeConfig:
         "no-sim-signal": {"sim_signal": False},
         "sim-signal": {"sim_signal": True},
         "operator-ar-722310": {"operator_mode": "ar722310"},
+        "operator-co-732101": {"operator_mode": "co732101"},
         "operator-zero": {"operator_mode": "zero"},
         "operator-omit": {"operator_mode": "omit"},
         "device-ghcr-defaults": {"device_ram": "3.53", "pid_mode": "ghcr", "network_radio_type": "1"},
@@ -791,6 +802,7 @@ def list_patches() -> None:
         "no-sim-signal",
         "sim-signal",
         "operator-ar-722310",
+        "operator-co-732101",
         "operator-zero",
         "operator-omit",
         "device-ghcr-defaults",
@@ -831,7 +843,7 @@ def run(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Send WA /v2/code parameter probes with random Argentina numbers and one-off shape patches.")
-    parser.add_argument("--country", default="AR", help="random phone country; only AR is implemented")
+    parser.add_argument("--country", default="AR", help="random phone country; supports AR and CO")
     parser.add_argument("--cc", default="54", help="default country calling code for --phone")
     parser.add_argument("--phone", action="append", default=[], help="specific phone; can repeat. If omitted, random AR mobile-like numbers are generated")
     parser.add_argument("--count", type=int, default=5, help="random phone count when --phone is omitted")
