@@ -663,6 +663,22 @@
 - CO operator / `lg=es,lc=CO` 相关组合没有改善，本轮仍偏 `blocked/no_routes`。
 - 固定 Xiaomi A11 在这一轮不如每请求随机 generic A11；工程默认继续保留“新 profile 随机 A11 池”，避免固定单机型聚集。
 
+#### 20.3 `candidate-random-a11-350-default` 扩大复核
+
+继续只测 `candidate-random-a11-350-default`，每请求新租约，每轮收集 10 个 `sent/no_routes` 有效决策。
+
+结果文件：
+
+- `.temp/wa-code-param-experiments/sms-lease-random-a11-350-deep-20260617-184629.summary.json`
+- `.temp/wa-code-param-experiments/sms-lease-random-a11-350-deep2-20260617-184903.summary.json`
+
+| 轮次 | 总样本 | `sent` | `no_routes` | `blocked` | 传输错误 | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| deep-1 | 14 | 6 | 4 | 3 | 1 | 10 | 6/10 |
+| deep-2 | 17 | 7 | 3 | 7 | 0 | 10 | 7/10 |
+
+两轮扩大复核合计：`13/20` 有效决策为 `sent`。因此该候选不是 100% 成功，但仍显著优于本轮其它候选和已知负向项。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
