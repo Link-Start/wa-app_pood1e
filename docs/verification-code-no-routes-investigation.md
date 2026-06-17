@@ -771,6 +771,25 @@
 - 设备画像优先 random generic Android 11，不使用固定 generic 单机型和固定 RAM。
 - 不叠加 `attempts=2`、`db=0`、google-play `client_metrics`、abprop preflight、GHCR/WAMSYS omit 等 boost 项。
 
+
+### 23. attempt 级 proxy-runtime 租约实现
+
+2026-06-17 在 wa-app 服务内落地 registration attempt 级动态租约：
+
+- 当注册链路走 common proxy 且 proxy URL 用户名可作为 proxy-runtime account id 时，服务会通过 proxy-runtime 控制面申请 `force_new` sticky dynamic lease。
+- `/v2/exist`/probe 与 `/v2/code` 共用同一个 attempt 租约，避免探测与发码阶段出口漂移。
+- 如果 `/v2/code` 未进入 `sent/waiting`，或者中途保存注册态失败，立即释放租约。
+- 如果 `/v2/code` 已 `sent/waiting`，租约随 OTP wait transient state 保存，后续 submit OTP 复用同一租约。
+- OTP submit 成功注册后立即释放租约并删除 OTP wait；未提交、提交失败或人工流程中断时依赖 proxy-runtime lease TTL 与 OTP wait TTL 自动过期。
+- cleanup failed registration 会尽力释放还在 OTP wait 中的租约。
+- 文档、日志、响应只暴露聚合状态和脱敏 route id；不记录 proxy URL、代理密码、原始 lease id 或出口 IP。
+
+部署侧使用既有变量，不新增业务配置项：
+
+- `PROXY_RUNTIME_API_BASE_URL`：proxy-runtime 控制面地址。
+- `PROXY_RUNTIME_SERVICE_AUTH_TOKEN`：服务间调用 token。
+- `WA_COMMON_PROXY`：仍作为 fallback 数据面代理；其中用户名用于推导 proxy-runtime account id。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
@@ -810,7 +829,7 @@
 
 - 继续以 `random generic Android 11 + 默认 locale/operator + signed WASafe + 无 abprop preflight` 作为服务默认底座做外部变量实验。
 - 不再优先验证 `/v2/exist` 是否缺失。
-- 下一轮优先验证：registration attempt 级租约策略 + random generic Android 11 + 默认 locale/operator + 可控号码前缀；随后再测真实客户端/Go 客户端指纹。
+- 下一轮优先验证：已落地的 registration attempt 级租约策略 + random generic Android 11 + 默认 locale/operator + 可控号码前缀；随后再测真实客户端/Go 客户端指纹。
 - GPIA / WAMSYS / 设备完整性画像后续只在出口和号码质量更稳定后再复验，避免被 `blocked` 号码噪声覆盖。
 - 所有实验结果继续只记录聚合状态与脱敏标识，禁止记录可复用请求材料。
 - 后续 probe 默认使用 signed WASafe envelope；只有做回归对照时才使用 `--unsigned` 或 `--empty-h`。

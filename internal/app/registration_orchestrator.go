@@ -31,11 +31,17 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 		return nil, err
 	}
 	logRegistrationAttemptState(basePayload, phone, reusedState)
-	runner, route, managedRoute, err := gateway.registrationRequestRunner(ctx, basePayload)
+	runner, route, managedRoute, proxyLease, err := gateway.registrationRequestRunner(ctx, basePayload)
 	if err != nil {
 		return nil, err
 	}
 	defer runner.CloseIdleConnections()
+	keepProxyLease := false
+	defer func() {
+		if !keepProxyLease {
+			gateway.releaseRegistrationProxyLease(context.Background(), proxyLease)
+		}
+	}()
 	probeResult, state := runner.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: method, AuthCodeContext: authCodeContext}, state)
 	_ = gateway.saveRegistrationAttemptState(context.Background(), stateRef, state)
 	logRegistrationProbeResult(basePayload, phone, route, method, probeResult)
@@ -74,11 +80,13 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 		WAAccountID:           waAccountID(account),
 		VerificationRequestID: verificationRequestID,
 		CreatedAtUnix:         time.Now().UTC().Unix(),
+		ProxyLease:            proxyLease,
 	}
 	if err := gateway.saveRegistrationOTPWait(ctx, wait, registrationOTPWaitDefaultTTL); err != nil {
 		_ = gateway.discardRejectedRegistration(context.Background(), basePayload, waAccountID(account), verificationRequestID)
 		return nil, err
 	}
+	keepProxyLease = true
 	_ = gateway.server.runtime.DeleteTransientState(context.Background(), stateRef)
 	response := map[string]any{
 		"success":                 true,
