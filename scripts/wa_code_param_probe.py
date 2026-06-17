@@ -1,0 +1,865 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import hmac
+import json
+import os
+import random
+import re
+import secrets
+import string
+import time
+import uuid
+import warnings
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import Any
+
+warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL.*")
+
+import requests
+import urllib3
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives.asymmetric import x25519
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
+
+import wa_exist_probe
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+SERVER_PUBLIC_KEY_HEX = wa_exist_probe.SERVER_PUBLIC_KEY_HEX
+CODE_URL = wa_exist_probe.CODE_URL
+USER_AGENT = "WhatsApp/2.26.23.71 Android/14 Device/OnePlus-LE2100"
+FORM_SAFE = set(string.ascii_letters + string.digits + "-._~")
+
+NATIVE_GPIA_PACKAGE_NAME = "com.whatsapp"
+NATIVE_GPIA_SOURCE_SIZE = "141711087"
+NATIVE_GPIA_SOURCE_DIGEST = "b3BumN//vPO0GypN5i+xXvNznZyGiXOT99Jip70omCg="
+NATIVE_GPIA_CERT_DIGEST = "OKD31QX+GP7GT780Psqq8xDb15k="
+NATIVE_GPIA_CLASSES_DIGEST = "qoblldcHz4lA84Sgs1QLZWPpd6YKG25zf0GwJZdTHXk="
+NATIVE_GPIA_NATIVE_LIB_DIGEST = "G9McgxRaSjtq92o7zx0fbf3Ak7+SPmxxNyvNXS01hlM="
+CURRENT_GPIA_DATA_SO_DIGEST = "SrL/HHWX9VAinH9OV4eloGSQLWSsUug93h5YGGad17s="
+GHCR_GPIA_DATA_SO_DIGEST = "0j9kw9djlCtmCCavV7go2wwge+2os853ubiE7F7Dew4="
+CURRENT_WAMSYS_REQUESTED_PERMISSIONS_DIGEST = "NNj5BoWX+yvZBYEY46Ze+Ad6Ykk0Z27FjgSysvkzzCU="
+
+ARGENTINA_AREA_CODES = ("11", "221", "223", "261", "291", "341", "351", "381")
+SENSITIVE_KEY_RE = re.compile(r"(token|cookie|session|auth|key|sig|code|gpia|_g[aeigp]|aid)", re.I)
+
+
+@dataclass(frozen=True)
+class ShapeConfig:
+    name: str
+    client_metrics_source: str = "unknown|unknown"
+    db: str = "1"
+    device_ram: str = "11.24"
+    network_radio_type: str = "1"
+    pid_mode: str = "current"
+    operator_mode: str = "zero"
+    sim_signal: bool = True
+    gpia_error_code: int = 1005
+    gpia_data_so_digest: str = CURRENT_GPIA_DATA_SO_DIGEST
+    gpia_source_mode: str = "current"
+    gpia_escape_slash: bool = True
+    wamsys_order: str = "current"
+    wamsys_values: str = "current"
+
+
+@dataclass(frozen=True)
+class ProbeMaterial:
+    cc: str
+    national: str
+    fdid: str
+    expid: str
+    expid_uuid: str
+    access_session_id: str
+    access_session_id_uuid: str
+    id_raw: bytes
+    backup_token_raw: bytes
+    token: str
+    authkey: str
+    key_bundle: dict[str, str]
+    advertising_id: str
+    created_at_unix: int
+    phone_sha256: str
+
+    @property
+    def e164(self) -> str:
+        return "+" + self.cc + self.national
+
+    @property
+    def id_hex(self) -> str:
+        return self.id_raw.hex()
+
+    @property
+    def backup_token_hex(self) -> str:
+        return self.backup_token_raw.hex()
+
+
+@dataclass
+class Param:
+    key: str
+    value: str
+    raw: bool = False
+
+
+def pct_bytes(raw: bytes) -> str:
+    out: list[str] = []
+    for value in raw:
+        ch = chr(value)
+        if ch in FORM_SAFE:
+            out.append(ch)
+        else:
+            out.append(f"%{value:02X}")
+    return "".join(out)
+
+
+def quote_form(value: str) -> str:
+    return pct_bytes(value.encode("utf-8"))
+
+
+def sha256_hex(value: str | bytes) -> str:
+    raw = value if isinstance(value, bytes) else value.encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def short_hash(value: str | bytes) -> str:
+    return sha256_hex(value)[:16]
+
+
+def b64u(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def b64std(raw: bytes) -> str:
+    return base64.b64encode(raw).decode("ascii")
+
+
+def decode_b64_any(value: str) -> bytes:
+    padded = value.strip() + "=" * ((4 - len(value.strip()) % 4) % 4)
+    try:
+        return base64.urlsafe_b64decode(padded)
+    except Exception:
+        return base64.b64decode(padded)
+
+
+def b64u_uuid_to_text(value: str) -> str:
+    raw = decode_b64_any(value)
+    if len(raw) != 16:
+        return str(uuid.uuid4())
+    return str(uuid.UUID(bytes=raw))
+
+
+def normalize_proxy(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+    if "://" not in value:
+        return "http://" + value
+    return value
+
+
+def sanitize_text(value: str, proxy_url: str = "") -> str:
+    text = value
+    if proxy_url:
+        text = text.replace(proxy_url, "<proxy>")
+    text = re.sub(r"://[^/@\s]+@", "://<redacted>@", text)
+    return text
+
+
+def sanitize_response(value: Any) -> Any:
+    if isinstance(value, dict):
+        out: dict[str, Any] = {}
+        for key, item in value.items():
+            if SENSITIVE_KEY_RE.search(str(key)):
+                out[str(key)] = "<redacted>"
+            else:
+                out[str(key)] = sanitize_response(item)
+        return out
+    if isinstance(value, list):
+        return [sanitize_response(item) for item in value[:32]]
+    if isinstance(value, str) and len(value) > 180:
+        return value[:180] + "…"
+    return value
+
+
+def random_argentina_phone() -> tuple[str, str]:
+    area = random.choice(ARGENTINA_AREA_CODES)
+    subscriber_len = 10 - len(area)
+    first = str(random.randint(2, 9))
+    rest = "".join(str(random.randint(0, 9)) for _ in range(subscriber_len - 1))
+    return "54", "9" + area + first + rest
+
+
+def normalize_phone(value: str, default_cc: str) -> tuple[str, str]:
+    digits = re.sub(r"\D+", "", value)
+    if not digits:
+        raise ValueError("phone is empty")
+    if value.strip().startswith("+") and digits.startswith(default_cc) and len(digits) > len(default_cc):
+        return default_cc, digits[len(default_cc) :]
+    if digits.startswith(default_cc) and len(digits) > len(default_cc) + 6:
+        return default_cc, digits[len(default_cc) :]
+    return default_cc, digits
+
+
+def phone_inputs(args: argparse.Namespace) -> list[tuple[str, str]]:
+    if args.phone:
+        return [normalize_phone(phone, args.cc) for phone in args.phone]
+    country = args.country.upper()
+    if country != "AR":
+        raise ValueError("only --country AR random generation is implemented; pass --phone for custom numbers")
+    return [random_argentina_phone() for _ in range(args.count)]
+
+
+def uuid_pair() -> tuple[str, str]:
+    value = uuid.uuid4()
+    return str(value), b64u(value.bytes)
+
+
+def new_probe_material(repo_root: Path, cc: str, national: str) -> ProbeMaterial:
+    state = wa_exist_probe.new_probe_state(repo_root, "+" + cc + national, cc, "mapped", {})
+    expid_uuid = b64u_uuid_to_text(state.expid)
+    access_session_id_uuid = b64u_uuid_to_text(state.access_session_id)
+    return ProbeMaterial(
+        cc=state.cc,
+        national=state.national,
+        fdid=state.fdid,
+        expid=state.expid,
+        expid_uuid=expid_uuid,
+        access_session_id=state.access_session_id,
+        access_session_id_uuid=access_session_id_uuid,
+        id_raw=state.raw_id,
+        backup_token_raw=state.raw_backup_token,
+        token=state.token,
+        authkey=state.authkey,
+        key_bundle=state.key_bundle,
+        advertising_id=str(uuid.uuid4()),
+        created_at_unix=int(time.time()),
+        phone_sha256=sha256_hex(state.cc + state.national),
+    )
+
+
+def stable_seed(material: ProbeMaterial, label: str) -> str:
+    return "|".join(
+        [
+            "byte-v-forge-wa-native-runtime/v1",
+            label.strip(),
+            material.cc,
+            material.national,
+            material.phone_sha256,
+            material.fdid,
+            material.expid_uuid,
+            material.access_session_id_uuid,
+            material.authkey,
+            material.key_bundle["e_ident"],
+            material.authkey,
+        ]
+    )
+
+
+def current_pid(material: ProbeMaterial) -> str:
+    seed = "|".join(
+        [
+            "byte-v-forge-wa-runtime-pid/v1",
+            material.phone_sha256,
+            material.fdid,
+            material.expid_uuid,
+            material.authkey,
+            str(material.created_at_unix),
+        ]
+    )
+    return str(10000 + int.from_bytes(hashlib.sha256(seed.encode()).digest()[:4], "big") % 50000)
+
+
+def runtime_token_current(material: ProbeMaterial, label: str) -> str:
+    digest = hashlib.sha256(stable_seed(material, label).encode()).digest()
+    return b64u(digest[:16])
+
+
+def runtime_token_ghcr(material: ProbeMaterial, label: str) -> str:
+    seed = "|".join(
+        [
+            "byte-v-forge-wa-gpia-source-dir/v1",
+            label,
+            material.cc,
+            material.national,
+            material.phone_sha256,
+            material.fdid,
+            material.expid_uuid,
+            material.authkey,
+        ]
+    )
+    return b64u(hashlib.sha256(seed.encode()).digest()[:16])
+
+
+def gpia_source_dir(material: ProbeMaterial, config: ShapeConfig) -> str:
+    if config.gpia_source_mode == "ghcr":
+        first = runtime_token_ghcr(material, "source-dir-a")
+        second = runtime_token_ghcr(material, "source-dir-b")
+    else:
+        first = runtime_token_current(material, "source-dir-prefix")
+        second = runtime_token_current(material, "source-dir-package")
+    return f"/data/app/~~{first}==/com.whatsapp-{second}==/base.apk"
+
+
+def gpia_key_source(material: ProbeMaterial) -> str:
+    public = decode_b64_any(material.authkey)
+    if len(public) == 32:
+        return b64std(public)
+    return "default"
+
+
+def render_json_value(value: Any, escape_slash: bool) -> str:
+    if isinstance(value, str):
+        encoded = json.dumps(value, separators=(",", ":"))
+        return encoded.replace("/", r"\/") if escape_slash else encoded
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return "null"
+    if isinstance(value, int):
+        return str(value)
+    raise TypeError(f"unsupported JSON value type: {type(value)!r}")
+
+
+def render_ordered_json(fields: list[tuple[str, Any]], escape_slash: bool) -> str:
+    parts = []
+    for key, value in fields:
+        parts.append(json.dumps(key, separators=(",", ":")) + ":" + render_json_value(value, escape_slash))
+    return "{" + ",".join(parts) + "}"
+
+
+def aes_cbc_pkcs7_encrypt(key_source: str, plaintext: bytes) -> str:
+    key = hashlib.sha256(key_source.encode()).digest()
+    iv = secrets.token_bytes(16)
+    padder = padding.PKCS7(128).padder()
+    padded = padder.update(plaintext) + padder.finalize()
+    encryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).encryptor()
+    ciphertext = encryptor.update(padded) + encryptor.finalize()
+    return b64std(iv + ciphertext)
+
+
+def encrypt_gpia_json(key_source: str, fields: list[tuple[str, Any]], config: ShapeConfig) -> str:
+    plaintext = render_ordered_json(fields, config.gpia_escape_slash).encode("utf-8")
+    return aes_cbc_pkcs7_encrypt(key_source, plaintext)
+
+
+def build_gpia(material: ProbeMaterial, config: ShapeConfig) -> dict[str, str]:
+    source_dir = gpia_source_dir(material, config)
+    path_digest = b64std(hashlib.sha256(source_dir.encode()).digest())
+    key_source = gpia_key_source(material)
+    primary = encrypt_gpia_json(
+        key_source,
+        [
+            ("sizeInBytes", NATIVE_GPIA_SOURCE_SIZE),
+            ("packageName", NATIVE_GPIA_PACKAGE_NAME),
+            ("code", config.gpia_error_code),
+            ("shatr", NATIVE_GPIA_SOURCE_DIGEST),
+            ("p", source_dir),
+            ("cert", NATIVE_GPIA_CERT_DIGEST),
+            ("sha256", path_digest),
+        ],
+        config,
+    )
+    compact = encrypt_gpia_json(key_source, [("_ic", config.gpia_error_code)], config)
+    device = encrypt_gpia_json(
+        key_source,
+        [
+            ("_dh", NATIVE_GPIA_CLASSES_DIGEST),
+            ("_iln", config.gpia_data_so_digest),
+            ("_isb", NATIVE_GPIA_SOURCE_SIZE),
+            ("_ip", NATIVE_GPIA_PACKAGE_NAME),
+            ("did", "LE2100_14.0.0.605(CN01)"),
+            ("_p", source_dir),
+            ("_ln", NATIVE_GPIA_NATIVE_LIB_DIGEST),
+            ("_ist", NATIVE_GPIA_SOURCE_DIGEST),
+            ("_icr", NATIVE_GPIA_CERT_DIGEST),
+            ("_is", path_digest),
+        ],
+        config,
+    )
+    return {"gpia": primary, "_gg": compact, "_gi": device}
+
+
+def derive_local_wamsys_bytes(material: ProbeMaterial, label: str, length: int) -> bytes:
+    seed = "|".join(
+        [
+            "byte-v-forge-wa-wamsys-precision/v1",
+            label,
+            material.cc,
+            material.national,
+            material.phone_sha256,
+            material.fdid,
+            material.expid_uuid,
+            material.access_session_id_uuid,
+            material.id_hex,
+            material.backup_token_hex,
+            material.authkey,
+            material.key_bundle["e_ident"],
+        ]
+    )
+    key = hashlib.sha256(seed.encode()).digest()
+    out = b""
+    counter = 0
+    while len(out) < length:
+        out += hmac.new(key, label.encode() + counter.to_bytes(4, "big"), hashlib.sha256).digest()
+        counter += 1
+    return out[:length]
+
+
+def current_boot_id(material: ProbeMaterial) -> str:
+    raw = bytearray(hashlib.sha256(stable_seed(material, "boot-id").encode()).digest()[:16])
+    raw[6] = (raw[6] & 0x0F) | 0x40
+    raw[8] = (raw[8] & 0x3F) | 0x80
+    return str(uuid.UUID(bytes=bytes(raw)))
+
+
+def current_android_id(material: ProbeMaterial) -> str:
+    seed = "|".join(
+        [
+            "byte-v-forge-wa-android-id/v1",
+            material.cc,
+            material.national,
+            material.phone_sha256,
+            material.fdid,
+            material.expid_uuid,
+            material.access_session_id_uuid,
+            material.authkey,
+            material.key_bundle["e_ident"],
+        ]
+    )
+    return f"{int.from_bytes(hashlib.sha256(seed.encode()).digest()[:8], 'big'):016x}"
+
+
+def build_current_ga(material: ProbeMaterial, config: ShapeConfig) -> str:
+    key_source = gpia_key_source(material)
+    boot_id = current_boot_id(material)
+    bi = aes_cbc_pkcs7_encrypt(key_source, boot_id.encode())
+    fields = [("bi", bi), ("ap", 72), ("ai", 54), ("mp", False), ("ae", 8496), ("mu", False)]
+    return render_ordered_json(fields, config.gpia_escape_slash)
+
+
+def build_ghcr_ga(material: ProbeMaterial, config: ShapeConfig) -> str:
+    bi = b64std(derive_local_wamsys_bytes(material, "_ga.bi", 64))
+    fields = [("ai", 141), ("ae", 0), ("ap", 172), ("bi", bi), ("mp", False), ("mu", False)]
+    return render_ordered_json(fields, config.gpia_escape_slash)
+
+
+def build_wamsys(material: ProbeMaterial, config: ShapeConfig) -> dict[str, str]:
+    gpia = build_gpia(material, config)
+    if config.wamsys_values == "ghcr":
+        values = {
+            "gpia": gpia["gpia"],
+            "_ge": '{"sb":false,"sv":false}',
+            "_gi": gpia["_gi"],
+            "_gg": gpia["_gg"],
+            "_gp": b64std(derive_local_wamsys_bytes(material, "_gp", 32)),
+            "_ga": build_ghcr_ga(material, config),
+            "aid": b64std(derive_local_wamsys_bytes(material, "aid", 32)),
+        }
+    else:
+        values = {
+            "gpia": gpia["gpia"],
+            "_ga": build_current_ga(material, config),
+            "_gi": gpia["_gi"],
+            "_gp": CURRENT_WAMSYS_REQUESTED_PERMISSIONS_DIGEST,
+            "_ge": '{"sb":false,"sv":false}',
+            "aid": b64std(hashlib.sha256(current_android_id(material).encode()).digest()),
+            "_gg": gpia["_gg"],
+        }
+    order = ["gpia", "_ge", "_gi", "_gg", "_gp", "_ga", "aid"] if config.wamsys_order == "ghcr" else ["gpia", "_ga", "_gi", "_gp", "_ge", "aid", "_gg"]
+    return {key: values[key] for key in order}
+
+
+def operator_fields(config: ShapeConfig) -> dict[str, str]:
+    if config.operator_mode == "omit":
+        return {}
+    if config.operator_mode == "ar722310":
+        return {"mcc": "722", "mnc": "310", "sim_mcc": "722", "sim_mnc": "310"}
+    return {"mcc": "000", "mnc": "000", "sim_mcc": "000", "sim_mnc": "000"}
+
+
+def device_fields(material: ProbeMaterial, config: ShapeConfig) -> dict[str, str]:
+    fields = {
+        "mistyped": "7",
+        "reason": "",
+        "hasav": "2",
+        "client_metrics": json.dumps(
+            {"attempts": 1, "app_campaign_download_source": config.client_metrics_source},
+            separators=(",", ":"),
+        ),
+        "education_screen_displayed": "false",
+        "prefer_sms_over_flash": "false",
+        "network_radio_type": config.network_radio_type,
+        "simnum": "0",
+        "hasinrc": "1",
+        "pid": "29418" if config.pid_mode == "ghcr" else current_pid(material),
+        "rc": "0",
+        "device_ram": config.device_ram,
+        "db": config.db,
+        "recaptcha": '{"stage":"ABPROP_DISABLED"}',
+        "feo2_query_status": "did_not_query",
+    }
+    fields.update(operator_fields(config))
+    if config.sim_signal:
+        has_sim = fields.get("simnum") == "1" or fields.get("sim_mcc", "000") not in {"", "000"}
+        fields.update(
+            {
+                "sim_type": "1" if has_sim else "0",
+                "airplane_mode_type": "0",
+                "cellular_strength": "5",
+                "roaming_type": "0",
+            }
+        )
+    return fields
+
+
+def add_param(params: list[Param], key: str, value: str, raw: bool = False) -> None:
+    params.append(Param(key=key, value=value, raw=raw))
+
+
+def build_code_params(material: ProbeMaterial, config: ShapeConfig, args: argparse.Namespace) -> list[Param]:
+    fields = device_fields(material, config)
+    wamsys = build_wamsys(material, config)
+    params: list[Param] = []
+    add_param(params, "cc", material.cc)
+    add_param(params, "in", material.national)
+    add_param(params, "lg", "en")
+    add_param(params, "lc", "US")
+    add_param(params, "fdid", material.fdid)
+    add_param(params, "expid", material.expid)
+    add_param(params, "access_session_id", material.access_session_id)
+    add_param(params, "id", pct_bytes(material.id_raw), raw=True)
+    add_param(params, "backup_token", pct_bytes(material.backup_token_raw), raw=True)
+    add_param(params, "token", material.token)
+    add_param(params, "method", "sms")
+    add_param(params, "advertising_id", material.advertising_id)
+    add_param(params, "authkey", material.authkey)
+    for key in ["e_ident", "e_keytype", "e_regid", "e_skey_id", "e_skey_val", "e_skey_sig"]:
+        add_param(params, key, material.key_bundle[key])
+    for key in [
+        "mistyped",
+        "reason",
+        "hasav",
+        "client_metrics",
+        "mcc",
+        "mnc",
+        "sim_mcc",
+        "sim_mnc",
+        "education_screen_displayed",
+        "prefer_sms_over_flash",
+        "network_radio_type",
+        "simnum",
+        "hasinrc",
+        "pid",
+        "rc",
+        "sim_type",
+        "airplane_mode_type",
+        "cellular_strength",
+        "roaming_type",
+        "device_ram",
+    ]:
+        if key in fields and (fields[key] != "" or key == "reason"):
+            add_param(params, key, pct_bytes(fields[key].encode()), raw=True)
+    add_param(params, "gpia", pct_bytes(wamsys["gpia"].encode()), raw=True)
+    add_param(params, "db", pct_bytes(fields["db"].encode()), raw=True)
+    add_param(params, "recaptcha", pct_bytes(fields["recaptcha"].encode()), raw=True)
+    for key, value in wamsys.items():
+        if key == "gpia":
+            continue
+        add_param(params, key, pct_bytes(value.encode()), raw=True)
+    add_param(params, "feo2_query_status", pct_bytes(fields["feo2_query_status"].encode()), raw=True)
+    apply_param_overrides(params, args.set_param, args.omit)
+    return params
+
+
+def apply_param_overrides(params: list[Param], sets: list[str], omits: list[str]) -> None:
+    omit_set = {item.strip() for item in omits if item.strip()}
+    if omit_set:
+        params[:] = [param for param in params if param.key not in omit_set]
+    for item in sets:
+        if "=" not in item:
+            raise ValueError(f"--set expects key=value, got {item!r}")
+        key, value = item.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise ValueError("--set key is empty")
+        encoded = pct_bytes(value.encode())
+        for param in params:
+            if param.key == key:
+                param.value = encoded
+                param.raw = True
+                break
+        else:
+            params.append(Param(key=key, value=encoded, raw=True))
+
+
+def render_plain(params: list[Param]) -> str:
+    return "&".join(f"{quote_form(param.key)}={param.value if param.raw else quote_form(param.value)}" for param in params)
+
+
+def encrypt_wasafe(plain: str) -> str:
+    server = x25519.X25519PublicKey.from_public_bytes(bytes.fromhex(SERVER_PUBLIC_KEY_HEX))
+    private = x25519.X25519PrivateKey.generate()
+    _ = private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+    public = private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    shared = private.exchange(server)
+    sealed = AESGCM(shared).encrypt(b"\x00" * 12, plain.encode("utf-8"), None)
+    return b64u(public + sealed)
+
+
+def summarize_response(data: dict[str, Any]) -> dict[str, Any]:
+    reason = str(data.get("reason") or data.get("failure_reason") or "")
+    status = str(data.get("status") or "")
+    return {
+        "status": status,
+        "reason": reason,
+        "no_routes": reason == "no_routes",
+        "request_failed": reason in {"missing_param", "bad_param", "bad_token", "old_version", "invalid_skey"},
+        "length": data.get("length"),
+        "sms_wait": data.get("sms_wait"),
+        "send_sms_wait": data.get("send_sms_wait"),
+        "voice_wait": data.get("voice_wait"),
+        "wa_old_wait": data.get("wa_old_wait"),
+        "email_otp_wait": data.get("email_otp_wait"),
+        "flash_wait": data.get("flash_wait"),
+    }
+
+
+def param_shape(params: list[Param]) -> str:
+    parts = []
+    for param in params:
+        value = param.value
+        if param.raw:
+            try:
+                value = requests.utils.unquote(value)
+            except Exception:
+                pass
+        mode = "raw" if param.raw else "form"
+        parts.append(f"{param.key}:{len(value.encode())}:{mode}")
+    return ",".join(parts)
+
+
+def param_value_hashes(params: list[Param]) -> str:
+    parts = []
+    for param in params:
+        value = requests.utils.unquote(param.value) if param.raw else param.value
+        parts.append(f"{param.key}:{len(value.encode())}:{short_hash(value)}")
+    return ",".join(parts)
+
+
+def post_code(material: ProbeMaterial, config: ShapeConfig, args: argparse.Namespace) -> dict[str, Any]:
+    params = build_code_params(material, config, args)
+    plain = render_plain(params)
+    shape = param_shape(params)
+    result: dict[str, Any] = {
+        "variant": config.name,
+        "phone_hash": short_hash(material.e164),
+        "phone_last4": material.e164[-4:],
+        "field_count": len(params),
+        "plain_len": len(plain),
+        "shape_hash": short_hash(shape),
+    }
+    if args.show_fields:
+        result["fields"] = shape
+        result["value_hashes"] = param_value_hashes(params)
+    if args.dry_run:
+        result["dry_run"] = True
+        return result
+    body = "ENC=" + encrypt_wasafe(plain) + "&H="
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": USER_AGENT,
+        "WaMsysRequest": "1",
+        "X-Forwarded-Host": "v.whatsapp.net",
+    }
+    proxies = {"http": args.proxy, "https": args.proxy} if args.proxy else None
+    try:
+        response = requests.post(CODE_URL, headers=headers, data=body, proxies=proxies, timeout=args.timeout, verify=False)
+        try:
+            parsed: Any = response.json()
+        except ValueError:
+            parsed = {"raw": response.text[:500]}
+        if not isinstance(parsed, dict):
+            parsed = {"raw": parsed}
+        result["http_status"] = response.status_code
+        result.update(summarize_response(parsed))
+        if args.show_response:
+            result["response"] = sanitize_response(parsed)
+    except Exception as exc:  # noqa: BLE001 - command-line probe must summarize network failures.
+        result["error"] = sanitize_text(str(exc), args.proxy)
+    return result
+
+
+def config_for_variant(name: str) -> ShapeConfig:
+    if name == "current":
+        return ShapeConfig(name="current")
+    if name == "ghcr":
+        return ShapeConfig(
+            name="ghcr",
+            client_metrics_source="google-play|unknown",
+            db="0",
+            device_ram="3.53",
+            pid_mode="ghcr",
+            sim_signal=False,
+            gpia_error_code=-2,
+            gpia_data_so_digest=GHCR_GPIA_DATA_SO_DIGEST,
+            gpia_source_mode="ghcr",
+            gpia_escape_slash=False,
+            wamsys_order="ghcr",
+            wamsys_values="ghcr",
+        )
+    raise ValueError(f"unknown variant: {name}")
+
+
+def apply_patch_name(config: ShapeConfig, patch: str) -> ShapeConfig:
+    patch = patch.strip()
+    patch_updates: dict[str, dict[str, Any]] = {
+        "client-metrics-google-play": {"client_metrics_source": "google-play|unknown"},
+        "client-metrics-unknown": {"client_metrics_source": "unknown|unknown"},
+        "db-zero": {"db": "0"},
+        "db-one": {"db": "1"},
+        "gpia-error-minus-two": {"gpia_error_code": -2},
+        "gpia-error-1005": {"gpia_error_code": 1005},
+        "gpia-data-digest-ghcr": {"gpia_data_so_digest": GHCR_GPIA_DATA_SO_DIGEST},
+        "gpia-data-digest-current": {"gpia_data_so_digest": CURRENT_GPIA_DATA_SO_DIGEST},
+        "gpia-source-ghcr": {"gpia_source_mode": "ghcr"},
+        "gpia-source-current": {"gpia_source_mode": "current"},
+        "gpia-json-no-slash-escape": {"gpia_escape_slash": False},
+        "gpia-json-slash-escape": {"gpia_escape_slash": True},
+        "wamsys-order-ghcr": {"wamsys_order": "ghcr"},
+        "wamsys-order-current": {"wamsys_order": "current"},
+        "wamsys-values-ghcr": {"wamsys_values": "ghcr"},
+        "wamsys-values-current": {"wamsys_values": "current"},
+        "wamsys-ghcr": {"wamsys_order": "ghcr", "wamsys_values": "ghcr"},
+        "no-sim-signal": {"sim_signal": False},
+        "sim-signal": {"sim_signal": True},
+        "operator-ar-722310": {"operator_mode": "ar722310"},
+        "operator-zero": {"operator_mode": "zero"},
+        "operator-omit": {"operator_mode": "omit"},
+        "device-ghcr-defaults": {"device_ram": "3.53", "pid_mode": "ghcr", "network_radio_type": "1"},
+        "device-current-defaults": {"device_ram": "11.24", "pid_mode": "current", "network_radio_type": "1"},
+    }
+    updates = patch_updates.get(patch)
+    if updates is None:
+        raise ValueError(f"unknown patch: {patch}")
+    patched = replace(config, **updates)
+    return replace(patched, name=config.name + "+" + patch)
+
+
+def patch_list(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def build_configs(args: argparse.Namespace) -> list[ShapeConfig]:
+    base = config_for_variant(args.variant)
+    patches = patch_list(args.patch)
+    if not args.matrix:
+        config = base
+        for patch in patches:
+            config = apply_patch_name(config, patch)
+        return [config]
+    matrix = [base]
+    for patch in patches:
+        matrix.append(apply_patch_name(base, patch))
+    return matrix
+
+
+def list_patches() -> None:
+    for patch in [
+        "client-metrics-google-play",
+        "client-metrics-unknown",
+        "db-zero",
+        "db-one",
+        "gpia-error-minus-two",
+        "gpia-error-1005",
+        "gpia-data-digest-ghcr",
+        "gpia-data-digest-current",
+        "gpia-source-ghcr",
+        "gpia-source-current",
+        "gpia-json-no-slash-escape",
+        "gpia-json-slash-escape",
+        "wamsys-order-ghcr",
+        "wamsys-order-current",
+        "wamsys-values-ghcr",
+        "wamsys-values-current",
+        "wamsys-ghcr",
+        "no-sim-signal",
+        "sim-signal",
+        "operator-ar-722310",
+        "operator-zero",
+        "operator-omit",
+        "device-ghcr-defaults",
+        "device-current-defaults",
+    ]:
+        print(patch)
+
+
+def run(args: argparse.Namespace) -> int:
+    if args.list_patches:
+        list_patches()
+        return 0
+    args.proxy = normalize_proxy(args.proxy or os.environ.get("WA_PROBE_PROXY_URL", ""))
+    repo_root = Path(__file__).resolve().parents[1]
+    shared_phones = phone_inputs(args) if (args.phone or args.reuse_phones) else None
+    configs = build_configs(args)
+    totals: dict[str, dict[str, int]] = {config.name: {"total": 0, "no_routes": 0, "ok_or_sent": 0, "errors": 0} for config in configs}
+    for config in configs:
+        phones = shared_phones if shared_phones is not None else phone_inputs(args)
+        for index, (cc, national) in enumerate(phones, start=1):
+            material = new_probe_material(repo_root, cc, national)
+            row = post_code(material, config, args)
+            row["probe"] = index
+            print(json.dumps(row, ensure_ascii=False, sort_keys=True), flush=True)
+            bucket = totals[config.name]
+            bucket["total"] += 1
+            if row.get("no_routes"):
+                bucket["no_routes"] += 1
+            if str(row.get("status", "")).lower() in {"ok", "sent"}:
+                bucket["ok_or_sent"] += 1
+            if row.get("error"):
+                bucket["errors"] += 1
+            if not args.dry_run and args.sleep > 0 and (index != len(phones) or config != configs[-1]):
+                time.sleep(args.sleep + random.random() * min(args.sleep, 0.5))
+    print(json.dumps({"summary": totals}, ensure_ascii=False, sort_keys=True), flush=True)
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Send WA /v2/code parameter probes with random Argentina numbers and one-off shape patches.")
+    parser.add_argument("--country", default="AR", help="random phone country; only AR is implemented")
+    parser.add_argument("--cc", default="54", help="default country calling code for --phone")
+    parser.add_argument("--phone", action="append", default=[], help="specific phone; can repeat. If omitted, random AR mobile-like numbers are generated")
+    parser.add_argument("--count", type=int, default=5, help="random phone count when --phone is omitted")
+    parser.add_argument("--proxy", default="", help="HTTP proxy URL. Prefer WA_PROBE_PROXY_URL env to avoid shell history")
+    parser.add_argument("--timeout", type=float, default=25)
+    parser.add_argument("--sleep", type=float, default=0.8, help="sleep between outbound requests")
+    parser.add_argument("--variant", choices=["current", "ghcr"], default="current")
+    parser.add_argument("--patch", default="", help="comma-separated single-parameter patch names")
+    parser.add_argument("--matrix", action="store_true", help="run baseline plus each patch independently")
+    parser.add_argument("--reuse-phones", action="store_true", help="reuse the same random phones across matrix variants; default is fresh phones per variant")
+    parser.add_argument("--set", dest="set_param", action="append", default=[], help="override final raw param as key=value; can repeat")
+    parser.add_argument("--omit", action="append", default=[], help="omit final param by key; can repeat")
+    parser.add_argument("--dry-run", action="store_true", help="render request shape only; do not send")
+    parser.add_argument("--show-fields", action="store_true", help="print field order/lengths and value hashes")
+    parser.add_argument("--show-response", action="store_true", help="print sanitized response payload")
+    parser.add_argument("--list-patches", action="store_true")
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    try:
+        return run(args)
+    except Exception as exc:  # noqa: BLE001 - CLI entrypoint.
+        print(json.dumps({"error": sanitize_text(str(exc), getattr(args, "proxy", ""))}, ensure_ascii=False), flush=True)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
