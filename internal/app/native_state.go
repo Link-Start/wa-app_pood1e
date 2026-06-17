@@ -713,9 +713,6 @@ func defaultNativeDeviceModel() nativeDeviceModel {
 }
 
 func newNativeRegistrationDeviceModel() nativeDeviceModel {
-	if randomIndex(2) == 0 {
-		return defaultNativeDeviceModel()
-	}
 	return randomNativeGenericAndroid11DeviceModel()
 }
 
