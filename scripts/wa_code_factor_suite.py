@@ -523,10 +523,36 @@ def factor_arms() -> list[FactorArm]:
         FactorArm("candidate", "candidate-random-a11-301-default", device_label="random-generic-a11", prefix="301"),
         FactorArm("candidate", "candidate-random-a11-350-default", device_label="random-generic-a11", prefix="350"),
     ]
+    boost_base = FactorArm("boost", "boost-baseline-random-a11-350", device_label="random-generic-a11", prefix="350")
+    boost_arms = [
+        boost_base,
+        replace(boost_base, label="boost-omit-wamsys", omits=wamsys_omits),
+        replace(boost_base, label="boost-ghcr-wamsys", patches=ghcr_patches),
+        replace(boost_base, label="boost-no-sim-signal", patches=("no-sim-signal",)),
+        replace(boost_base, label="boost-client-metrics-google-play", patches=("client-metrics-google-play",)),
+        replace(
+            boost_base,
+            label="boost-client-metrics-attempts-2",
+            sets=('client_metrics={"attempts":2,"app_campaign_download_source":"unknown|unknown"}',),
+        ),
+        replace(boost_base, label="boost-db-zero", patches=("db-zero",)),
+        replace(boost_base, label="boost-hasav-zero", sets=("hasav=0",)),
+        replace(boost_base, label="boost-hasinrc-zero", sets=("hasinrc=0",)),
+        replace(boost_base, label="boost-abprop-then-code", preflight="abprop"),
+        replace(boost_base, label="boost-transport-curl", transport="curl"),
+        replace(boost_base, label="boost-transport-curl-http1", transport="curl-http1.1"),
+        replace(boost_base, label="boost-random-xiaomi-like-a11", device_label="random-xiaomi-like-a11"),
+        replace(boost_base, label="boost-random-oppo-like-a12", device_label="random-oppo-like-a12"),
+        replace(boost_base, label="boost-consistent-generic-a11", device_label="consistent-generic-a11"),
+        replace(boost_base, label="boost-ram-450", device_label="ram-a11-450"),
+        replace(boost_base, label="boost-ram-650", device_label="ram-a11-650"),
+        replace(boost_base, label="boost-prefix-301", prefix="301"),
+    ]
     return [
         *combo_arms,
         *routing_arms,
         *candidate_arms,
+        *boost_arms,
         FactorArm("transport", "transport-requests"),
         FactorArm("transport", "transport-curl", transport="curl"),
         FactorArm("transport", "transport-curl-http1", transport="curl-http1.1"),
