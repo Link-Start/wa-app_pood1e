@@ -333,9 +333,16 @@ def factor_arms() -> list[FactorArm]:
         replace(routing_base, label="routing-mnc-123", sets=(*co_locale_sets, "mnc=123", "sim_mnc=123")),
         replace(routing_base, label="routing-mnc-130", sets=(*co_locale_sets, "mnc=130", "sim_mnc=130")),
     ]
+    candidate_arms = [
+        FactorArm("candidate", "candidate-xiaomi-301-default", device_label="xiaomi-a11", prefix="301"),
+        FactorArm("candidate", "candidate-xiaomi-350-default", device_label="xiaomi-a11", prefix="350"),
+        FactorArm("candidate", "candidate-random-a11-301-default", device_label="random-generic-a11", prefix="301"),
+        FactorArm("candidate", "candidate-random-a11-350-default", device_label="random-generic-a11", prefix="350"),
+    ]
     return [
         *combo_arms,
         *routing_arms,
+        *candidate_arms,
         FactorArm("transport", "transport-requests"),
         FactorArm("transport", "transport-curl", transport="curl"),
         FactorArm("transport", "transport-curl-http1", transport="curl-http1.1"),

@@ -573,6 +573,37 @@
 
 下一步如果要改服务默认画像，应优先恢复为默认 locale/operator，不强行设置 `lg=es/lc=CO` 和 CO operator；设备画像继续优先 random generic Android 11 或 Xiaomi A11。
 
+### 18. 默认上下文 + A11 设备 + 301/350 候选复测
+
+基于上一轮判断，新增 `scripts/wa_code_factor_suite.py` 的 `candidate` 分组，专门验证“不强行设置 CO locale/operator”的候选组合：
+
+- `candidate-xiaomi-301-default`：Xiaomi M2007J3SC / Android 11 + 默认 locale/operator + 301。
+- `candidate-xiaomi-350-default`：Xiaomi M2007J3SC / Android 11 + 默认 locale/operator + 350。
+- `candidate-random-a11-301-default`：每次随机 generic Android 11 + 默认 locale/operator + 301。
+- `candidate-random-a11-350-default`：每次随机 generic Android 11 + 默认 locale/operator + 350。
+
+样本控制：每组最多 8 请求，达到 3 个 `sent/no_routes` 有效决策即停止。
+
+结果文件：
+
+- `.temp/wa-code-param-experiments/sms-candidate-default-device-prefix-20260617-170527.summary.json`
+
+| 组别 | 总样本 | `sent` | `no_routes` | `blocked` | 传输错误 | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `candidate-random-a11-350-default` | 4 | 3 | 0 | 0 | 1 | 3 | 3/3 |
+| `candidate-xiaomi-350-default` | 3 | 3 | 0 | 0 | 0 | 3 | 3/3 |
+| `candidate-random-a11-301-default` | 6 | 2 | 1 | 2 | 1 | 3 | 2/3 |
+| `candidate-xiaomi-301-default` | 3 | 1 | 2 | 0 | 0 | 3 | 1/3 |
+
+当前判断：
+
+- `350 + 默认 locale/operator + Android 11 设备画像` 是目前最强组合，小样本有效决策 6/6 `sent`。
+- `301` 可用但明显不如 `350`：random A11 为 2/3，Xiaomi A11 为 1/3。
+- random generic A11 与 Xiaomi A11 在 `350` 下都很好；如果要减少固定设备指纹聚集，优先 random generic A11；如果要工程实现简单，Xiaomi A11 coherent profile 也可以作为默认。
+- 继续避免 `lg=es/lc=CO`、CO operator 强绑定和 300 前缀。
+
+工程建议更新为：默认 profile 切离 OnePlus A14，优先 Android 11 设备画像；验证码请求保持默认 `lg=en/lc=US` 与 `mcc/mnc/sim_mcc/sim_mnc=000/000`，号码池优先 350。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
