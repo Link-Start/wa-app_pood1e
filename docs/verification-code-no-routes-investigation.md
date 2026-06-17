@@ -790,6 +790,25 @@
 - `PROXY_RUNTIME_SERVICE_AUTH_TOKEN`：服务间调用 token。
 - `WA_COMMON_PROXY`：仍作为 fallback 数据面代理；其中用户名用于推导 proxy-runtime account id。
 
+### 25. 逆向材料复核：GPIA error-only code 对齐
+
+2026-06-18 重新对照 `wa-reverse/handoffs/2.26.23.71-262307112` 后确认：当前 `/v2/code` 字段顺序已经与 clean smali final map 对齐，但 GPIA error-only material 仍有一个语义差异。
+
+逆向材料里的 error-only runtime shape：
+
+- `primary_long` JSON 长度为 `310`。
+- `token_compact` JSON 长度为 `10`。
+- 该 shape 对应 `code=-2` / `_ic=-2`，不是 `1005`。
+
+`1005` 只对应 AuthKeyStore 缺少 client static public key、请求 Play Integrity 前直接失败的分支。当前 wa-app synthetic profile 始终有 AuthKey client static key；如果按“有 AuthKey、但不走/不可用 Play Integrity Standard token”的真机 error-only 路径，应该使用 Play/StandardIntegrity error code `-2`。因此将 wa-app 与 probe 的 current GPIA error code 从 `1005` 调整为 `-2`；保留脚本 patch `gpia-error-1005` 作为回归对照。
+
+本次复核还确认：
+
+- `gpia,db,recaptcha,<optional tail>,_ga,_gi,_gp,_ge,aid,_gg,feo2_query_status` 顺序已对齐。
+- `requestHash` 与 native AES key source 都绑定 AuthKey client static keypair；Go 中 `AuthKey == ChatStatic.Public`，用 ChatStatic private 派生 public 后作为 key source 与逆向语义一致。
+- `source APK size`、`source SHA-256` 与 `classes.dex SHA-256` 常量仍匹配当前 `app-release.apk`。
+- 仍需后续单变量验证：`/v2/exist` 前置、failed transient state 复用、WAMSYS `_ga` 运行态 path age、真实 Play token 成功路径是否出现 `_it/_hp`。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。

@@ -79,7 +79,7 @@ class ShapeConfig:
     pid_mode: str = "current"
     operator_mode: str = "zero"
     sim_signal: bool = True
-    gpia_error_code: int = 1005
+    gpia_error_code: int = -2
     gpia_data_so_digest: str = CURRENT_GPIA_DATA_SO_DIGEST
     gpia_source_mode: str = "current"
     gpia_escape_slash: bool = True
