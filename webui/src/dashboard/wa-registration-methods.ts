@@ -69,6 +69,14 @@ export function registrationAnyMethodAvailable(status: WaProbeStatus | null, ela
   return Boolean(status && selectableRegistrationMethods.some((option) => registrationMethodAvailable(status, option.value, elapsedSeconds)));
 }
 
+export function registrationMinimumCooldownSeconds(status: WaProbeStatus | null, elapsedSeconds = 0) {
+  if (!status) return 0;
+  const values = selectableRegistrationMethods
+    .map((option) => registrationMethodCooldownSeconds(status, option.value, elapsedSeconds))
+    .filter((value) => value > 0);
+  return values.length ? Math.min(...values) : 0;
+}
+
 export function registrationChannelsHardBlocked(status: WaProbeStatus | null) {
   return Boolean(status?.blocked === true || status?.accountFlow === 'invalid_number');
 }

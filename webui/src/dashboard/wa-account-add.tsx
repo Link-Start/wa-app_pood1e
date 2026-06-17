@@ -8,11 +8,16 @@ import { Input } from '@/components/ui/input';
 import { probeWaPhoneSMS, registerWaPhone, submitWaRegistrationOTP, type WaWorkflowResponse } from './wa-api';
 import { probeMatchesValues, registrationFailureMessage, workflowText, type WaAccountAddProbeState } from './wa-account-add-model';
 import { WhatsAppIcon } from './wa-brand-icon';
-import { accountReasonLabel } from './wa-result-labels';
+import { accountReasonLabel, countdownLabel } from './wa-result-labels';
 import { waProbeStatus } from './wa-result-model';
 import { WaRegistrationChannelButtons } from './wa-registration-channel-buttons';
 import { WaRegistrationOtpCard, WA_REGISTRATION_OTP_LENGTH } from './wa-registration-otp-card';
-import { registrationAnyMethodAvailable, registrationChannelsHardBlocked, type SelectableRegistrationMethodOption } from './wa-registration-methods';
+import {
+  registrationAnyMethodAvailable,
+  registrationChannelsHardBlocked,
+  registrationMinimumCooldownSeconds,
+  type SelectableRegistrationMethodOption,
+} from './wa-registration-methods';
 import { resolveWaPhoneTarget, type WaResolvedPhone } from './wa-utils';
 type PendingRegistration = { accountID: string; verificationRequestID: string };
 type Props = { disabled?: boolean; onChanged: () => void | Promise<void>; onDone: (message: string) => void; onError: (message: string) => void };
@@ -29,18 +34,20 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
   const [busy, setBusy] = useState(false);
   const samePhone = probeMatchesValues(probe, phone, countryCallingCode);
   const currentTarget = resolveWaPhoneTarget(phone, countryCallingCode).target;
+  const hasPhoneTarget = Boolean(currentTarget);
   const registrationSamePhone = Boolean(registrationTarget && currentTarget?.e164 === registrationTarget.e164);
   const activeRegistrationResult = registrationSamePhone ? registrationResult : null;
   const status = waProbeStatus(activeRegistrationResult || (samePhone ? probe?.result : null));
   const channelStatus = samePhone ? waProbeStatus(activeRegistrationResult || probe?.result) : null;
+  const directRegistration = hasPhoneTarget && !channelStatus;
   const cooldownElapsedSeconds = Math.max(0, (clockNow - cooldownStartedAt) / 1000);
   const blocked = status.blocked === true;
-  const showChannels = Boolean(channelStatus);
   const channelsHardBlocked = registrationChannelsHardBlocked(channelStatus);
-  const canRegister = samePhone && registrationAnyMethodAvailable(channelStatus, cooldownElapsedSeconds) && !channelsHardBlocked;
+  const nextCooldownSeconds = registrationMinimumCooldownSeconds(channelStatus, cooldownElapsedSeconds);
+  const canRegister = ((samePhone && registrationAnyMethodAvailable(channelStatus, cooldownElapsedSeconds)) || directRegistration) && !channelsHardBlocked;
   const detected = samePhone && Boolean(channelStatus);
   const badgeVariant = pending ? 'default' : blocked ? 'destructive' : canRegister ? 'default' : detected ? 'secondary' : 'outline';
-  const badgeLabel = pending ? '等待 OTP' : blocked ? '已封禁' : canRegister ? '可注册' : detected ? '无可直发' : '待检测';
+  const badgeLabel = accountAddBadgeLabel(Boolean(pending), blocked, directRegistration, canRegister, nextCooldownSeconds, detected);
 
   useEffect(() => {
     const activeResult = activeRegistrationResult || (samePhone ? probe?.result : null);
@@ -88,7 +95,7 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
   async function startRegistration(method: SelectableRegistrationMethodOption) {
     const resolved = resolveWaPhoneTarget(phone, countryCallingCode);
     if (!resolved.target) return onError(resolved.error || '请输入手机号和国家拨号码');
-    if (!samePhone || !channelStatus) return onError('请先检测');
+    if ((!samePhone || !channelStatus) && method.code !== 'sms') return onError('未检测时仅支持直接发起 SMS');
     setBusy(true);
     try {
       const result = await registerWaPhone(resolved.target.input, method.value);
@@ -141,14 +148,28 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
           </div>
           {probe && !samePhone && <Badge variant="outline">号码已变化，请重新检测</Badge>}
         </FieldGroup>
-        {showChannels && (
-          <Field>
-            <FieldLabel>通道</FieldLabel>
-            <WaRegistrationChannelButtons status={channelStatus} elapsedSeconds={cooldownElapsedSeconds} disabled={busy || disabled || channelsHardBlocked} onStart={(method) => void startRegistration(method)} />
-          </Field>
-        )}
+        <Field>
+          <FieldLabel>通道</FieldLabel>
+          <WaRegistrationChannelButtons
+            status={channelStatus}
+            elapsedSeconds={cooldownElapsedSeconds}
+            phoneReady={hasPhoneTarget}
+            disabled={busy || disabled || channelsHardBlocked}
+            onStart={(method) => void startRegistration(method)}
+          />
+        </Field>
         {pending && <WaRegistrationOtpCard value={otp} busy={busy} onChange={setOtp} onSubmit={() => void submitOTP()} />}
       </CardContent>
     </Card>
   );
+}
+
+function accountAddBadgeLabel(pending: boolean, blocked: boolean, directRegistration: boolean, canRegister: boolean, cooldownSeconds: number, detected: boolean) {
+  if (pending) return '等待 OTP';
+  if (blocked) return '已封禁';
+  if (directRegistration) return '可尝试';
+  if (canRegister) return '可注册';
+  if (cooldownSeconds > 0) return `冷却 ${countdownLabel(cooldownSeconds)}`;
+  if (detected) return '暂无可用';
+  return '待检测';
 }

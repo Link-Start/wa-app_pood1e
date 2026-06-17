@@ -5,7 +5,6 @@ import { countdownLabel } from './wa-result-labels';
 import {
   registrationMethodAvailable,
   registrationMethodCooldownSeconds,
-  registrationMethodStatus,
   visibleRegistrationChannelMethods,
   type RegistrationChannelMethodOption,
   type SelectableRegistrationMethodOption,
@@ -15,16 +14,17 @@ import type { WaProbeStatus } from './wa-result-model';
 type Props = {
   status: WaProbeStatus | null;
   elapsedSeconds: number;
+  phoneReady: boolean;
   disabled?: boolean;
   onStart: (method: SelectableRegistrationMethodOption) => void;
 };
 
-export function WaRegistrationChannelButtons({ status, elapsedSeconds, disabled, onStart }: Props) {
+export function WaRegistrationChannelButtons({ status, elapsedSeconds, phoneReady, disabled, onStart }: Props) {
   const methods = channelMethods(status);
   return (
     <div className="grid gap-2 sm:grid-cols-2">
       {methods.map((method) => {
-        const state = channelState(method, status, elapsedSeconds);
+        const state = channelState(method, status, elapsedSeconds, phoneReady);
         return (
           <Button
             key={method.value}
@@ -49,13 +49,43 @@ export function WaRegistrationChannelButtons({ status, elapsedSeconds, disabled,
 }
 
 function channelMethods(status: WaProbeStatus | null) {
-  if (status?.blocked === true) return visibleRegistrationChannelMethods;
-  const methods = status ? visibleRegistrationChannelMethods.filter((method) => registrationMethodStatus(status, method.value)) : visibleRegistrationChannelMethods;
-  return [...methods.filter((method) => method.directRequest), ...methods.filter((method) => !method.directRequest)];
+  return [
+    ...visibleRegistrationChannelMethods.filter((method) => method.directRequest),
+    ...visibleRegistrationChannelMethods.filter((method) => !method.directRequest),
+  ];
 }
 
-function channelState(method: RegistrationChannelMethodOption, status: WaProbeStatus | null, elapsedSeconds: number) {
-  if (!status) return { ready: false, cooldown: 0, label: '先检测', badge: 'outline' as const, Icon: CircleDashed, title: '先检测' };
+function channelState(method: RegistrationChannelMethodOption, status: WaProbeStatus | null, elapsedSeconds: number, phoneReady: boolean) {
+  if (!status) {
+    if (!phoneReady) {
+      return {
+        ready: false,
+        cooldown: 0,
+        label: '需号码',
+        badge: 'outline' as const,
+        Icon: CircleDashed,
+        title: '先填写号码',
+      };
+    }
+    if (method.directRequest && method.code === 'sms') {
+      return {
+        ready: true,
+        cooldown: 0,
+        label: '发起',
+        badge: 'default' as const,
+        Icon: CheckCircle2,
+        title: '发起 SMS 注册',
+      };
+    }
+    return {
+      ready: false,
+      cooldown: 0,
+      label: '需检测',
+      badge: 'outline' as const,
+      Icon: CircleDashed,
+      title: '需先检测该通道',
+    };
+  }
   const cooldown = registrationMethodCooldownSeconds(status, method.value, elapsedSeconds);
   if (cooldown > 0) {
     return { ready: false, cooldown, label: countdownLabel(cooldown), badge: 'secondary' as const, Icon: Clock3, title: '冷却中' };
