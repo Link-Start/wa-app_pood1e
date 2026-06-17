@@ -7,9 +7,11 @@ import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 import random
+import requests
 import string
 import time
 from typing import Any
+from urllib.parse import quote
 
 import wa_code_param_probe as probe
 from wa_code_random_device_experiment import DeviceProfile, build_device
@@ -49,6 +51,157 @@ class SuiteArgs:
     device_display_id: str = ""
     device_ram: str = ""
     transport: str = "requests"
+
+
+@dataclass(frozen=True)
+class ProxyRuntimeLease:
+    lease_id: str
+    account_id: str
+    purpose: str
+    proxy_url: str
+    listener_id: str = ""
+    exit_country: str = ""
+    exit_state: str = ""
+    exit_city: str = ""
+
+
+class ProxyRuntimeLeaseClient:
+    def __init__(self, api_base: str, auth_token: str, timeout: float, egress_host: str, egress_port: int, egress_scheme: str) -> None:
+        self._api_base = api_base.rstrip("/")
+        self._timeout = max(timeout, 1)
+        self._egress_host = egress_host.strip()
+        self._egress_port = egress_port
+        self._egress_scheme = egress_scheme.strip()
+        self._session = requests.Session()
+        self._session.trust_env = False
+        if auth_token:
+            self._session.headers.update({"Authorization": "Bearer " + auth_token})
+
+    def acquire(self, account_id: str, purpose: str, ttl_seconds: int, job_key: str) -> ProxyRuntimeLease:
+        labels = {
+            "purpose": "wa-app-probe",
+            "job_id": job_key,
+            "session_id": probe.short_hash(job_key),
+        }
+        payload = {
+            "accountId": account_id,
+            "purpose": purpose,
+            "forceNew": True,
+            "policy": {
+                "mode": "PROXY_SESSION_MODE_STICKY",
+                "stickyTtl": f"{max(30, int(ttl_seconds or 120))}s",
+                "upstreamKind": "PROXY_UPSTREAM_KIND_DYNAMIC_IP",
+                "rotationMode": "PROXY_ROTATION_MODE_STICKY_SESSION",
+                "labels": labels,
+            },
+            "selectionPolicy": {"purpose": purpose, "maxAttempts": 1},
+        }
+        response = self._session.post(self._api_base + "/leases/acquire", json=payload, timeout=self._timeout)
+        response.raise_for_status()
+        body = response.json() or {}
+        lease = dict_value(body, "lease")
+        egress = dict_value(body, "egress") or dict_value(lease, "egress")
+        lease_id = text_value(lease, "leaseId", "lease_id") or text_value(dict_value(egress, "labels"), "lease_id", "leaseId")
+        if not lease_id:
+            raise RuntimeError("proxy-runtime lease_id is empty")
+        return ProxyRuntimeLease(
+            lease_id=lease_id,
+            account_id=account_id,
+            purpose=purpose,
+            proxy_url=self._proxy_url(egress),
+            listener_id=proxy_runtime_listener_id(lease, body),
+            exit_country=proxy_runtime_exit_text(("exitCountry", "exit_country", "countryCode", "country_code"), egress, lease, body).upper(),
+            exit_state=proxy_runtime_exit_text(("exitState", "exit_state", "region", "state"), egress, lease, body).upper(),
+            exit_city=proxy_runtime_exit_text(("exitCity", "exit_city", "city"), egress, lease, body),
+        )
+
+    def release(self, lease: ProxyRuntimeLease) -> str:
+        payload = {"leaseId": lease.lease_id, "accountId": lease.account_id, "purpose": lease.purpose}
+        response = self._session.post(self._api_base + "/leases/release", json=payload, timeout=self._timeout)
+        response.raise_for_status()
+        return "released"
+
+    def close(self) -> None:
+        self._session.close()
+
+    def _proxy_url(self, egress: dict[str, Any]) -> str:
+        host = self._egress_host or text_value(egress, "host")
+        port = self._egress_port or int(text_value(egress, "port") or "0")
+        if not host or port <= 0:
+            raise RuntimeError("proxy-runtime lease egress is invalid")
+        protocol = text_value(egress, "protocol").upper()
+        scheme = self._egress_scheme or ("socks5h" if "SOCKS5" in protocol else "http")
+        labels = dict_value(egress, "labels")
+        username = text_value(labels, "proxy_username", "proxyUsername")
+        password = text_value(labels, "proxy_password", "proxyPassword")
+        auth = ""
+        if username or password:
+            auth = f"{quote(username, safe='-._~')}:{quote(password, safe='-._~')}@"
+        return f"{scheme}://{auth}{host}:{port}"
+
+
+def dict_value(item: dict[str, Any], key: str) -> dict[str, Any]:
+    value = item.get(key) if isinstance(item, dict) else None
+    return value if isinstance(value, dict) else {}
+
+
+def text_value(item: dict[str, Any], *keys: str) -> str:
+    if not isinstance(item, dict):
+        return ""
+    for key in keys:
+        value = item.get(key)
+        if value is not None:
+            return str(value).strip()
+    return ""
+
+
+def proxy_runtime_listener_id(*items: dict[str, Any]) -> str:
+    queue = list(items)
+    while queue:
+        item = queue.pop(0)
+        if not isinstance(item, dict):
+            continue
+        value = text_value(item, "listenerId", "listener_id")
+        if value:
+            return value
+        for key in ("listener", "egressListener", "egress_listener"):
+            nested = item.get(key)
+            if isinstance(nested, dict):
+                queue.append(nested)
+        labels = item.get("labels")
+        if isinstance(labels, dict):
+            queue.append(labels)
+    return ""
+
+
+def proxy_runtime_exit_text(keys: tuple[str, ...], *items: dict[str, Any]) -> str:
+    queue = list(items)
+    while queue:
+        item = queue.pop(0)
+        if not isinstance(item, dict):
+            continue
+        value = text_value(item, *keys)
+        if value:
+            return value
+        labels = item.get("labels")
+        if isinstance(labels, dict):
+            queue.append(labels)
+    return ""
+
+
+def lease_log_fields(lease: ProxyRuntimeLease) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "lease_hash": probe.short_hash(lease.lease_id),
+    }
+    if lease.listener_id:
+        out["listener_hash"] = probe.short_hash(lease.listener_id)
+    if lease.exit_country:
+        out["lease_exit_country"] = lease.exit_country
+    if lease.exit_state:
+        out["lease_exit_state"] = lease.exit_state
+    if lease.exit_city:
+        out["lease_exit_city"] = lease.exit_city
+    return out
 
 
 def classify(row: dict[str, Any]) -> str:
@@ -184,21 +337,52 @@ def post_abprop(material: probe.ProbeMaterial, args: SuiteArgs) -> dict[str, Any
         return {"ab_error": probe.sanitize_text(str(exc), args.proxy)}
 
 
-def run_arm_once(repo_root: Path, base_args: argparse.Namespace, arm: FactorArm, stable_cache: dict[str, probe.ProbeMaterial]) -> dict[str, Any]:
+def run_arm_once(
+    repo_root: Path,
+    base_args: argparse.Namespace,
+    arm: FactorArm,
+    stable_cache: dict[str, probe.ProbeMaterial],
+    lease_client: ProxyRuntimeLeaseClient | None = None,
+) -> dict[str, Any]:
     material = build_material(repo_root, arm, stable_cache)
     args = args_for_arm(base_args, arm)
     config = config_for_arm(arm, args)
     preflight_result: dict[str, Any] = {}
-    if arm.preflight == "abprop":
-        preflight_result = post_abprop(material, args)
-    row = probe.post_code(material, config, args)
-    row.update(preflight_result)
+    lease: ProxyRuntimeLease | None = None
+    release_status = ""
+    try:
+        if lease_client is not None and not base_args.dry_run:
+            lease = lease_client.acquire(
+                base_args.proxy_runtime_account_id,
+                base_args.proxy_runtime_purpose,
+                base_args.proxy_runtime_ttl,
+                f"{base_args.run_id}:{arm.label}:{material.e164}:{time.time_ns()}",
+            )
+            args.proxy = lease.proxy_url
+        if arm.preflight == "abprop":
+            preflight_result = post_abprop(material, args)
+        row = probe.post_code(material, config, args)
+        row.update(preflight_result)
+        if lease is not None:
+            row.update(lease_log_fields(lease))
+    except Exception as exc:  # noqa: BLE001 - CLI probe must summarize lease and network failures.
+        row = {"error": probe.sanitize_text(str(exc), args.proxy), "outcome": "transport_error"}
+        if lease is not None:
+            row.update(lease_log_fields(lease))
+    finally:
+        if lease is not None and lease_client is not None:
+            try:
+                release_status = lease_client.release(lease)
+            except Exception as exc:  # noqa: BLE001 - release failure must not hide request outcome.
+                release_status = "release_error:" + probe.sanitize_text(str(exc), args.proxy)
+    if release_status:
+        row["lease_release"] = release_status
     row["group"] = arm.group
     row["label"] = arm.label
     row["transport"] = arm.transport
     row["device_label"] = arm.device_label
     row["app_version"] = arm.app_version
-    row["outcome"] = classify(row)
+    row["outcome"] = row.get("outcome") or classify(row)
     if arm.prefix:
         row["prefix"] = arm.prefix
     if arm.stable_install:
@@ -409,6 +593,7 @@ def run_fixed_rounds(
     args: argparse.Namespace,
     arms: list[FactorArm],
     stable_cache: dict[str, probe.ProbeMaterial],
+    lease_client: ProxyRuntimeLeaseClient | None,
     handle: Any,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -416,7 +601,7 @@ def run_fixed_rounds(
         round_arms = list(arms)
         random.shuffle(round_arms)
         for arm in round_arms:
-            row = run_arm_once(repo_root, args, arm, stable_cache)
+            row = run_arm_once(repo_root, args, arm, stable_cache, lease_client)
             row["round"] = round_index
             rows.append(row)
             line = json.dumps(row, ensure_ascii=False, sort_keys=True)
@@ -432,6 +617,7 @@ def run_until_target_decisions(
     args: argparse.Namespace,
     arms: list[FactorArm],
     stable_cache: dict[str, probe.ProbeMaterial],
+    lease_client: ProxyRuntimeLeaseClient | None,
     handle: Any,
 ) -> list[dict[str, Any]]:
     max_samples = args.max_samples if args.max_samples > 0 else args.samples
@@ -450,7 +636,7 @@ def run_until_target_decisions(
         batch_index += 1
         random.shuffle(active_arms)
         for arm in active_arms:
-            row = run_arm_once(repo_root, args, arm, stable_cache)
+            row = run_arm_once(repo_root, args, arm, stable_cache, lease_client)
             sample_counts[arm.label] += 1
             if is_target_decision(row):
                 decision_counts[arm.label] += 1
@@ -473,6 +659,15 @@ def main() -> int:
     parser.add_argument("--groups", default="", help="comma-separated factor groups")
     parser.add_argument("--labels", default="", help="comma-separated exact labels")
     parser.add_argument("--proxy", default="", help="HTTP proxy URL; WA_PROBE_PROXY_URL is used when omitted")
+    parser.add_argument("--lease-per-request", action="store_true", help="acquire and release a proxy-runtime dynamic lease for each outbound request")
+    parser.add_argument("--proxy-runtime-api-base", default="", help="proxy-runtime API base; PROXY_RUNTIME_API_BASE is used when omitted")
+    parser.add_argument("--proxy-runtime-auth-token", default="", help="proxy-runtime service auth token; PROXY_RUNTIME_AUTH_TOKEN is used when omitted")
+    parser.add_argument("--proxy-runtime-account-id", default="", help="proxy-runtime dynamic profile/account id")
+    parser.add_argument("--proxy-runtime-purpose", default="wa-app-probe")
+    parser.add_argument("--proxy-runtime-ttl", type=int, default=120)
+    parser.add_argument("--proxy-runtime-egress-host", default="", help="public data-plane host override for lease egress")
+    parser.add_argument("--proxy-runtime-egress-port", type=int, default=0, help="public data-plane port override for lease egress")
+    parser.add_argument("--proxy-runtime-egress-scheme", default="", help="public data-plane scheme override for lease egress")
     parser.add_argument("--timeout", type=float, default=25)
     parser.add_argument("--sleep", type=float, default=0.6)
     parser.add_argument("--jitter", type=float, default=0.3)
@@ -483,8 +678,29 @@ def main() -> int:
     parser.add_argument("--run-id", default="")
     args = parser.parse_args()
 
+    args.proxy_runtime_api_base = (args.proxy_runtime_api_base or os.environ.get("PROXY_RUNTIME_API_BASE", "")).strip()
+    args.proxy_runtime_auth_token = (args.proxy_runtime_auth_token or os.environ.get("PROXY_RUNTIME_AUTH_TOKEN", "")).strip()
+    args.proxy_runtime_account_id = (args.proxy_runtime_account_id or os.environ.get("PROXY_RUNTIME_ACCOUNT_ID", "")).strip()
+    args.proxy_runtime_egress_host = (args.proxy_runtime_egress_host or os.environ.get("PROXY_RUNTIME_EGRESS_HOST", "")).strip()
+    args.proxy_runtime_egress_scheme = (args.proxy_runtime_egress_scheme or os.environ.get("PROXY_RUNTIME_EGRESS_SCHEME", "")).strip()
+    if args.proxy_runtime_egress_port <= 0:
+        args.proxy_runtime_egress_port = int(os.environ.get("PROXY_RUNTIME_EGRESS_PORT", "0") or "0")
     args.proxy = probe.normalize_proxy(args.proxy or os.environ.get("WA_PROBE_PROXY_URL", ""))
-    if not args.proxy and not args.dry_run:
+    if args.lease_per_request:
+        missing = [
+            name
+            for name, value in {
+                "PROXY_RUNTIME_API_BASE": args.proxy_runtime_api_base,
+                "PROXY_RUNTIME_AUTH_TOKEN": args.proxy_runtime_auth_token,
+                "PROXY_RUNTIME_ACCOUNT_ID": args.proxy_runtime_account_id,
+            }.items()
+            if not value
+        ]
+        if missing and not args.dry_run:
+            print(json.dumps({"error": "missing " + ",".join(missing)}, ensure_ascii=False))
+            return 2
+        args.proxy = ""
+    if not args.proxy and not args.dry_run and not args.lease_per_request:
         print(json.dumps({"error": "set WA_PROBE_PROXY_URL or pass --proxy"}, ensure_ascii=False))
         return 2
     groups = {item.strip() for item in args.groups.split(",") if item.strip()}
@@ -496,12 +712,28 @@ def main() -> int:
 
     repo_root = Path(__file__).resolve().parents[1]
     stable_cache: dict[str, probe.ProbeMaterial] = {}
+    lease_client = (
+        ProxyRuntimeLeaseClient(
+            args.proxy_runtime_api_base,
+            args.proxy_runtime_auth_token,
+            min(args.timeout, 10),
+            args.proxy_runtime_egress_host,
+            args.proxy_runtime_egress_port,
+            args.proxy_runtime_egress_scheme,
+        )
+        if args.lease_per_request and not args.dry_run
+        else None
+    )
     ndjson_path, summary_path = output_paths(args)
-    with ndjson_path.open("w", encoding="utf-8") as handle:
-        if args.target_decisions > 0:
-            rows = run_until_target_decisions(repo_root, args, arms, stable_cache, handle)
-        else:
-            rows = run_fixed_rounds(repo_root, args, arms, stable_cache, handle)
+    try:
+        with ndjson_path.open("w", encoding="utf-8") as handle:
+            if args.target_decisions > 0:
+                rows = run_until_target_decisions(repo_root, args, arms, stable_cache, lease_client, handle)
+            else:
+                rows = run_fixed_rounds(repo_root, args, arms, stable_cache, lease_client, handle)
+    finally:
+        if lease_client is not None:
+            lease_client.close()
     summary = summarize(rows)
     payload = {
         "samples_per_arm": args.samples,
