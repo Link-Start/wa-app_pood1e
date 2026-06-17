@@ -40,8 +40,8 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 SERVER_PUBLIC_KEY_HEX = wa_exist_probe.SERVER_PUBLIC_KEY_HEX
 CODE_URL = wa_exist_probe.CODE_URL
-USER_AGENT = "WhatsApp/2.26.23.71 Android/14 Device/OnePlus-LE2100"
-DEVICE_DISPLAY_ID = "LE2100_14.0.0.605(CN01)"
+USER_AGENT = "WhatsApp/2.26.23.71 Android/11 Device/Xiaomi-M2007J3SC"
+DEVICE_DISPLAY_ID = "M2007J3SC_11.0.14(CN01)"
 FORM_SAFE = set(string.ascii_letters + string.digits + "-._~")
 
 ANDROID_KEY_ATTESTATION_OID = ObjectIdentifier("1.3.6.1.4.1.11129.2.1.17")
@@ -73,7 +73,7 @@ class ShapeConfig:
     name: str
     client_metrics_source: str = "unknown|unknown"
     db: str = "1"
-    device_ram: str = "11.24"
+    device_ram: str = "6.58"
     network_radio_type: str = "1"
     device_display_id: str = DEVICE_DISPLAY_ID
     pid_mode: str = "current"
@@ -1063,7 +1063,7 @@ def apply_patch_name(config: ShapeConfig, patch: str) -> ShapeConfig:
         "operator-zero": {"operator_mode": "zero"},
         "operator-omit": {"operator_mode": "omit"},
         "device-ghcr-defaults": {"device_ram": "3.53", "pid_mode": "ghcr", "network_radio_type": "1"},
-        "device-current-defaults": {"device_ram": "11.24", "pid_mode": "current", "network_radio_type": "1"},
+        "device-current-defaults": {"device_ram": "6.58", "pid_mode": "current", "network_radio_type": "1"},
     }
     updates = patch_updates.get(patch)
     if updates is None:

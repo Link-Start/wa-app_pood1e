@@ -604,6 +604,19 @@
 
 工程建议更新为：默认 profile 切离 OnePlus A14，优先 Android 11 设备画像；验证码请求保持默认 `lg=en/lc=US` 与 `mcc/mnc/sim_mcc/sim_mnc=000/000`，号码池优先 350。
 
+### 19. wa-app 默认画像改进
+
+根据默认上下文候选复测结果，已将 wa-app 新建 native profile 的默认设备画像从负向 baseline 切到 Xiaomi Android 11：
+
+- 默认设备从 `OnePlus LE2100 / Android 14` 调整为 `Xiaomi M2007J3SC / Android 11`。
+- 默认 `_gi.did` display id 调整为 `M2007J3SC_11.0.14(CN01)`。
+- 默认 `device_ram` 从 `11.24` 调整为 `6.58`。
+- 保持验证码请求默认 `lg=en/lc=US`。
+- 保持默认 operator 为 `mcc/mnc/sim_mcc/sim_mnc=000/000`，不再把 CO operator/locale 作为默认方向。
+- 同步将 probe 脚本的 `current/default` 设备画像改为 Xiaomi A11，避免后续实验默认值再次落回 OnePlus A14。
+
+本次没有自动重写已有持久 profile。原因是已持久化 profile 代表一个安装态，中途把同一安装态从 OnePlus A14 改成 Xiaomi A11 可能产生设备漂移。线上复验时需要用新号码/新注册态，或清理旧的 OnePlus profile 后再验证。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。

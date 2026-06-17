@@ -428,7 +428,7 @@ func nativeDefaultDeviceMapFields() map[string]string {
 		"simnum":                "0",
 		"hasinrc":               "1",
 		"rc":                    "0",
-		"device_ram":            "11.24",
+		"device_ram":            nativeDefaultDeviceRAMGiB,
 		"db":                    nativeDefaultDebugBridgeStatus,
 		"recaptcha":             `{"stage":"ABPROP_DISABLED"}`,
 		"feo2_query_status":     nativeDefaultFeo2QueryStatus,
