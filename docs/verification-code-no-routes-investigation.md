@@ -408,19 +408,65 @@
 
 本轮后优先级调整：
 
-1. **国家/SIM/locale 组合**：后续默认尝试 CO operator + `lg=es/lc=CO`。
-2. **号码质量/前缀**：优先 `314` / `350` 前缀做后续复验，暂避 `310`。
+1. **国家/SIM/locale 组合**：后续默认使用 CO operator + `lg=es/lc=CO`。
+2. **号码质量/前缀**：优先 `350`，暂避 `314` / `310`。
 3. **设备画像**：继续优先 Xiaomi Android 11 coherent profile 或每次随机化 generic Android 11。
-4. **GPIA/WAMSYS**：GHCR / omit 有弱信号，但需要在更好号码段与 locale 组合下复核。
+4. **GPIA/WAMSYS**：组合复核中 current 优于 GHCR / omit，后续默认 current。
 5. **HTTP/TLS**：curl 没改善，Android 真机/服务内 Go/更接近 Android 的 TLS 栈仍是开放项。
 
 当前基本排除：旧 app version、ABProp 缺失、单纯请求频率、单纯 `db`、单纯 Python vs curl。
+
+### 14. CO locale + 前缀 + WAMSYS 组合复核
+
+按上一轮优先级，固定以下 baseline 做组合复核：
+
+- 设备：Xiaomi M2007J3SC / Android 11 coherent profile。
+- 国家上下文：`operator-co-732101` + `lg=es` + `lc=CO`。
+- 号码前缀：只测 `314` / `350`。
+- WAMSYS/GPIA：`current`、`ghcr-wamsys`、`omit-wamsys` 三组。
+
+新增 `combo` 分组到 `scripts/wa_code_factor_suite.py`。结果文件：
+
+- `.temp/wa-code-param-experiments/sms-combo-colocale-wamsys-20260617-152404.summary.json`
+- `.temp/wa-code-param-experiments/sms-combo-prefix-current-focus-20260617-152610.summary.json`
+
+第一轮组合矩阵：
+
+| 分组 | 总样本 | `sent` | `no_routes` | `blocked` | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `combo-350-current` | 6 | 2 | 1 | 3 | 3 | 2/3 |
+| `combo-350-ghcr` | 6 | 0 | 1 | 5 | 1 | 0/1 |
+| `combo-350-omit-wamsys` | 6 | 0 | 2 | 4 | 2 | 0/2 |
+| `combo-314-current` | 6 | 0 | 6 | 0 | 6 | 0/6 |
+| `combo-314-ghcr` | 6 | 0 | 5 | 1 | 5 | 0/5 |
+| `combo-314-omit-wamsys` | 6 | 0 | 6 | 0 | 6 | 0/6 |
+
+随后只复核 `current` 下的 `314` vs `350`：
+
+| 分组 | 总样本 | `sent` | `no_routes` | `blocked` | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `combo-350-current` | 8 | 1 | 1 | 6 | 2 | 1/2 |
+| `combo-314-current` | 8 | 0 | 8 | 0 | 8 | 0/8 |
+
+合并两轮 `current` 结果：
+
+| 分组 | 总样本 | `sent` | `no_routes` | `blocked` | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `350 + current` | 14 | 3 | 2 | 9 | 5 | 3/5 |
+| `314 + current` | 14 | 0 | 14 | 0 | 14 | 0/14 |
+
+当前判断：
+
+- `350 + current WAMSYS/GPIA + CO locale/operator + Xiaomi A11` 是目前最好的可复现组合。
+- `314` 在组合复核中稳定 `no_routes`，暂时从优先前缀里移除。
+- `ghcr-wamsys` 与 `omit-wamsys` 在好前缀/locale 下没有优于 current；下一步默认使用 current WAMSYS/GPIA。
+- `350` 的 `blocked` 比例高，说明号码质量仍是主要噪声；后续应继续扩大 `350` 样本或换更高质量号码池。
 
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
 - 单纯 MCC/MNC 画像不一致：未看到明显影响；但 CO operator + `lg=es/lc=CO` 组合出现正信号，需复核。
-- 单纯号码前缀：不是硬决定项；但本轮 `314` / `350` 好于 `300/301/310`，后续优先使用。
+- 单纯号码前缀：不是硬决定项；组合复核后 `350` 明显好于 `314`，后续优先 `350`。
 - 单纯把 Python requests 换成 curl / curl HTTP/1.1：未看到改善。
 - 组合多个 GHCR 形态参数：未优于 `device-ghcr-defaults` 单项。
 - Python probe 的空 `H=` 形态：已修为非空 signed `H`，但修复后仍未单独带来 `sent`。
@@ -455,7 +501,7 @@
 
 - 继续以 `device-ghcr-defaults` 作为参数底座做外部变量实验。
 - 不再优先验证 `/v2/exist` 是否缺失。
-- 下一轮优先验证：Xiaomi Android 11 coherent profile + CO operator + `lg=es/lc=CO` + 优先 `314/350` 前缀；随后再复核 GPIA/WAMSYS 与真实客户端/Go 客户端指纹。
+- 下一轮优先验证：Xiaomi Android 11 coherent profile + CO operator + `lg=es/lc=CO` + `350` 前缀 + current WAMSYS/GPIA；随后再测真实客户端/Go 客户端指纹。
 - GPIA / WAMSYS / 设备完整性画像后续只在出口和号码质量更稳定后再复验，避免被 `blocked` 号码噪声覆盖。
 - 所有实验结果继续只记录聚合状态与脱敏标识，禁止记录可复用请求材料。
 - 后续 probe 默认使用 signed WASafe envelope；只有做回归对照时才使用 `--unsigned` 或 `--empty-h`。

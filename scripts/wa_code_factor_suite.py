@@ -274,7 +274,37 @@ def factor_arms() -> list[FactorArm]:
         "wamsys-ghcr",
     )
     wamsys_omits = ("gpia", "_ga", "_gi", "_gp", "_ge", "aid", "_gg")
+    co_locale_sets = ("lg=es", "lc=CO")
+    combo_arms = []
+    for prefix in ("314", "350"):
+        combo_arms.extend(
+            [
+                FactorArm(
+                    "combo",
+                    f"combo-{prefix}-current",
+                    patches=("operator-co-732101",),
+                    sets=co_locale_sets,
+                    prefix=prefix,
+                ),
+                FactorArm(
+                    "combo",
+                    f"combo-{prefix}-ghcr",
+                    patches=("operator-co-732101", *ghcr_patches),
+                    sets=co_locale_sets,
+                    prefix=prefix,
+                ),
+                FactorArm(
+                    "combo",
+                    f"combo-{prefix}-omit-wamsys",
+                    patches=("operator-co-732101",),
+                    sets=co_locale_sets,
+                    omits=wamsys_omits,
+                    prefix=prefix,
+                ),
+            ]
+        )
     return [
+        *combo_arms,
         FactorArm("transport", "transport-requests"),
         FactorArm("transport", "transport-curl", transport="curl"),
         FactorArm("transport", "transport-curl-http1", transport="curl-http1.1"),
