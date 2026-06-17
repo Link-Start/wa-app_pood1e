@@ -804,7 +804,7 @@
 
 本次复核还确认：
 
-- clean smali final map 的 WAMSYS 追加顺序已确认；本地合成 provider 只发送来源闭环的 WAMSYS 子集，`_gp/aid` 等未知来源字段等待真实 capture 透传或补逆向证据。
+- clean smali final map 的 WAMSYS 追加顺序已确认；当前无 Android 设备依赖的运行路径只发送来源闭环的 WAMSYS 子集，`_gp/aid` 等未知来源字段必须继续逆向确认来源后再实现。
 - `requestHash` 与 native AES key source 都绑定 AuthKey client static keypair；Go 中 `AuthKey == ChatStatic.Public`，用 ChatStatic private 派生 public 后作为 key source 与逆向语义一致。
 - `source APK size`、`source SHA-256` 与 `classes.dex SHA-256` 常量仍匹配当前 `app-release.apk`。
 - 仍需后续单变量验证：`/v2/exist` 前置、failed transient state 复用、WAMSYS `_ga` 运行态 path age、真实 Play token 成功路径是否出现 `_it/_hp`。
@@ -827,7 +827,7 @@
 
 | 字段/材料 | 已确认来源 | 实现状态 |
 | --- | --- | --- |
-| `/v2/code` outer field order | clean smali `KotlinRegistrationBridge.A06` + `RequestCodeRepository$requestCode$2` + `FQr.A0H/A0S` | 已按 `gpia,db,recaptcha,<optional tail>,<WAMSYS native map>,feo2_query_status` 追加；本地合成 provider 只发送已闭环值，真实 capture 可携带完整 native map |
+| `/v2/code` outer field order | clean smali `KotlinRegistrationBridge.A06` + `RequestCodeRepository$requestCode$2` + `FQr.A0H/A0S` | 已按 `gpia,db,recaptcha,<optional tail>,<WAMSYS native map>,feo2_query_status` 的追加边界实现；无 Android 设备依赖的本地 provider 只发送已闭环值 |
 | `feo2_query_status` | clean smali shared-pref 默认值 | 默认 `did_not_query` |
 | `pid` | clean smali `Process.myPid()` | 已改成运行态进程 ID，不再用安装态 hash 伪造 |
 | `client_metrics.attempts` / `reason` | request-code retry state | 仍按当前 transient state 生成；失败重试会不同于脚本 fresh state |
@@ -844,13 +844,13 @@
 
 | 字段/材料 | 已确认内容 | 未闭环点 | 当前处理原则 |
 | --- | --- | --- | --- |
-| `aid` | `FQr.A0S.WAMSYS` native map 中存在，长度 44 | 具体 native source 未在当前 handoff 中定位；不能把“Android ID-ish SHA-256”当结论 | 本地合成 provider 不再发送；只有外部 `WamsysCapture` 带真实 opaque value 时才透传 |
-| `_gp` | WAMSYS native map 中存在，长度 44 | 当前 reverse 只确认长度/位置，未记录 raw source 算法 | 本地合成 provider 不再发送；只有外部 `WamsysCapture` 带真实 opaque value 时才透传 |
+| `aid` | `FQr.A0S.WAMSYS` native map 中存在，长度 44 | 具体 native source 未在当前 handoff 中定位；不能把“Android ID-ish SHA-256”当结论 | 本地合成 provider 不再发送；必须补齐 native source 后再实现，不能作为无 Android 依赖路径的猜测字段 |
+| `_gp` | WAMSYS native map 中存在，长度 44 | 当前 reverse 只确认长度/位置，未记录 raw source 算法 | 本地合成 provider 不再发送；必须补齐 native source 后再实现，不能作为无 Android 依赖路径的猜测字段 |
 | GPIA `sha256` / `_is` | error-only serializer 中存在，长度 44，来自 native global slot `0xc45a48` | 当前资料未证明它等于 `SHA-256(sourceDir path)` | 本地 GPIA error material 不再发送；需要补 native/global slot hook 后才能恢复 |
 | GPIA JSON slash escaping | serializer 走 `org.json.JSONObject.toString()` | 当前只记录 byte length/key order/type length；加密 block 长度不能反推出 slash escaping | 暂不根据长度猜测切换实现 |
 | Play token success path `_it/_hp` | error-only 样本未出现；成功路径可能出现 | `_hp` value 依赖 feature/global/runtime/rand stream，当前没有成功路径样本 | 不添加 `_it/_hp`，直到成功路径 value-safe hook 证实 |
 
-结论：本轮落地两类变更：`pid` 改为已闭环的 `Process.myPid()`；`aid`、`_gp`、GPIA `sha256/_is` 从本地合成 provider / probe current 形态移除。后续如果缺这些字段导致 `no_routes`，也只能说明真实 opaque source 尚未补齐，不能再用 path digest、Android-ID digest 或实验命中率把猜测写成结论。
+结论：本轮落地两类变更：`pid` 改为已闭环的 `Process.myPid()`；`aid`、`_gp`、GPIA `sha256/_is` 从本地合成 provider / probe current 形态移除。当前产品运行路径不依赖 Android 设备采集材料；后续如果缺这些字段导致 `no_routes`，只能继续逆向补齐 source，不能再用 path digest、Android-ID digest 或实验命中率把猜测写成结论。
 
 ## 当前排除项
 
