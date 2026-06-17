@@ -435,17 +435,6 @@ func registrationCodeResultPhoneStatus(result EngineCodeResult, method waappv1.V
 		smsAvailable = false
 		smsWaitSeconds = int64(result.RetryAfter / time.Second)
 	}
-	if !failed && result.DeliverySideEffect && method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS {
-		if result.RetryAfter > 0 {
-			smsStatus = "COOLDOWN"
-			smsAvailable = false
-			smsWaitSeconds = int64(result.RetryAfter / time.Second)
-		} else {
-			smsStatus = "AVAILABLE"
-			smsAvailable = true
-			smsWaitSeconds = 0
-		}
-	}
 	registrationPhaseValue := registrationPhase(!failed, "accepted", result.RetryAfter)
 	if failed {
 		registrationPhaseValue = "OTP_REQUEST_FAILED"
@@ -455,10 +444,6 @@ func registrationCodeResultPhoneStatus(result EngineCodeResult, method waappv1.V
 	}
 	rawStatus := result.RawStatus
 	rawReason := result.RawReason
-	if !failed && result.DeliverySideEffect {
-		rawStatus = "accepted"
-		rawReason = ""
-	}
 	return map[string]any{
 		"account_status":               registrationCodeAccountStatus(failed),
 		"account_flow":                 accountProbeFlowUnknown,

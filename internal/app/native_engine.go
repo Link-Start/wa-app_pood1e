@@ -184,13 +184,10 @@ func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, inp
 	}
 	status := waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_WAITING
 	s := responseStatus(data)
-	deliverySideEffect := false
 	if s == "sent" || s == "ok" {
 		status = waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_SENT
 	} else if verificationCodeRateLimited(data) {
 		return verificationCodeRejectedResult(data, input.DeliveryMethod, now, retryAfter, "verification request is cooling down"), state
-	} else if verificationCodeNoRoutesDeliverySideEffect(data, input.DeliveryMethod, retryAfter) {
-		deliverySideEffect = true
 	} else if s != "" {
 		return EngineCodeResult{
 			Status:         waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED,
@@ -202,13 +199,6 @@ func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, inp
 		}, state
 	}
 	result := verificationCodeResult(status, data, input.DeliveryMethod, now, retryAfter)
-	if deliverySideEffect && result.ExpectedCodeLength == 0 {
-		result.ExpectedCodeLength = nativeDefaultSMSCodeLength
-	}
-	if deliverySideEffect {
-		result.DeliverySideEffect = true
-		result.MethodStatuses = acceptedDeliverySideEffectMethodStatuses(result.MethodStatuses, input.DeliveryMethod, retryAfter)
-	}
 	if input.DeliveryMethod == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER {
 		challenge, challengeErr := e.prepareAccountTransferChallenge(input.Phone, &state, data, now)
 		if challengeErr != nil {
@@ -224,15 +214,6 @@ func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, inp
 		result.MethodStatuses = upsertVerificationMethodStatus(result.MethodStatuses, "acc_tr", verificationWaitStatus{Present: true})
 	}
 	return result, state
-}
-
-func acceptedDeliverySideEffectMethodStatuses(statuses []VerificationMethodStatus, method waappv1.VerificationDeliveryMethod, retryAfter time.Duration) []VerificationMethodStatus {
-	code := registrationMethodName(method, "sms")
-	wait := verificationWaitStatus{Present: true}
-	if retryAfter > 0 {
-		wait.Seconds = int64(retryAfter / time.Second)
-	}
-	return upsertVerificationMethodStatus(statuses, code, wait)
 }
 
 func (e *NativeEngine) prepareAccountTransferChallenge(phone *waappv1.PhoneTarget, state *nativeState, data map[string]any, now time.Time) (*waappv1.AccountTransferChallenge, error) {
@@ -870,24 +851,6 @@ func verificationCodeRateLimited(data map[string]any) bool {
 	default:
 		return false
 	}
-}
-
-func verificationCodeNoRoutesDeliverySideEffect(data map[string]any, method waappv1.VerificationDeliveryMethod, retryAfter time.Duration) bool {
-	if registrationMethodName(method, "sms") != "sms" {
-		return false
-	}
-	if responseStatus(data) != "fail" || responseReason(data) != "no_routes" {
-		return false
-	}
-	if retryAfter > 0 {
-		return true
-	}
-	for _, status := range verificationCodeMethodStatuses(data, method) {
-		if status.Code == "sms" || status.Method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS {
-			return true
-		}
-	}
-	return false
 }
 
 func verificationCodeRetryAfter(data map[string]any, method waappv1.VerificationDeliveryMethod) time.Duration {
