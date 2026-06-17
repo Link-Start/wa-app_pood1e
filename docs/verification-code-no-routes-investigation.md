@@ -174,6 +174,57 @@
 
 结论：`H=` 空值确实是 probe 的错误形态，脚本已修；但在当前样本下，修成 signed `H` 后仍未复现 `sent`，所以它不是单独足以解释 `no_routes` 的因素。
 
+
+### 9. SMS-only 设备 UA / app version / 上下文因素
+
+后续实验只看 SMS 方法，不再比较 voice / email 等其他 method。
+
+第一轮非 IP 上下文因素结果文件：
+
+- `.temp/wa-code-param-experiments/non-ip-context-factors-20260617-141902.summary.json`
+
+结论：
+
+- `/v2/reg_onboard_abprop` 预取可以稳定返回 `ok` 且包含 `exp_cfg`，但没有改善后续 SMS `/v2/code`。
+- 稳定安装态 profile 没有改善 SMS `/v2/code`。
+- 旧 app version + HUAWEI UA 触发 `bad_token`，说明 app version 与 token/服务端校验强相关，不能随便降级。
+
+随后拆分 app version 与设备 UA：
+
+- `.temp/wa-code-param-experiments/non-ip-ua-version-split-20260617-142148.summary.json`
+
+| 组别 | 总样本 | `sent` | `no_routes` | `blocked` | `bad_token` | 备注 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `ua-current-oneplus` | 4 | 0 | 1 | 3 | 0 | 当前默认 UA |
+| `ua-current-huawei` | 4 | 1 | 2 | 1 | 0 | 当前 app version + HUAWEI UA 可用 |
+| `ua-old-oneplus` | 4 | 0 | 0 | 0 | 4 | 旧 app version 稳定 `bad_token` |
+| `ua-old-huawei` | 4 | 0 | 0 | 0 | 4 | 旧 app version 稳定 `bad_token` |
+
+进一步只测当前 app version 下的设备 UA：
+
+- `.temp/wa-code-param-experiments/non-ip-current-ua-device-focus-20260617-142306.summary.json`
+
+| 组别 | 总样本 | `sent` | `no_routes` | `blocked` | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `oneplus-current` | 18 | 0 | 6 | 9 | 6 | 0/6 |
+| `huawei-current` | 16 | 3 | 5 | 5 | 8 | 3/8 |
+| `samsung-current` | 12 | 1 | 7 | 3 | 8 | 1/8 |
+
+再固定当前 app version + HUAWEI UA，只拆 SMS 参数底座：
+
+- `.temp/wa-code-param-experiments/sms-huawei-param-split-20260617-142601.summary.json`
+
+| 组别 | 总样本 | `sent` | `no_routes` | `blocked` | 有效决策数 | `sent / 有效决策` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `huawei-current` | 9 | 3 | 3 | 3 | 6 | 3/6 |
+| `huawei-device-ghcr` | 7 | 3 | 3 | 1 | 6 | 3/6 |
+| `huawei-gpia-wamsys` | 6 | 3 | 3 | 0 | 6 | 3/6 |
+| `huawei-device-gpia-wamsys` | 7 | 3 | 3 | 1 | 6 | 3/6 |
+
+当前判断：SMS 链路里最强的非 IP 信号是 **保持当前 app version `2.26.23.71`，但把设备 UA 从 OnePlus 切到 HUAWEI TRT-AL00A**。参数底座是否 current / device-ghcr / gpia+wamsys 对 HUAWEI UA 下的有效决策影响不明显，都是约 50% `sent`。
+
+因此，后续如果要改服务默认画像，优先考虑当前 app version + HUAWEI 设备 UA / profile，而不是改 `/v2/exist`、IP 或 method。
+
 ## 当前排除项
 
 - 缺少 `/v2/exist` 预热：已排除为主因。
@@ -182,6 +233,7 @@
 - 单纯把 Python requests 换成 curl：未看到改善。
 - 组合多个 GHCR 形态参数：未优于 `device-ghcr-defaults` 单项。
 - Python probe 的空 `H=` 形态：已修为非空 signed `H`，但修复后仍未单独带来 `sent`。
+- 旧 app version：当前 token/服务端校验下会稳定 `bad_token`，不应降级。
 
 ## 仍然可疑的因素
 
@@ -193,11 +245,15 @@
    - 已做分组验证，但信号没有稳定复现，暂不能证明它是主因。
    - 当前材料仍是合成形态，可能与真实客户端特征有差异；该因素应在更稳定的同国家出口或真实客户端指纹下继续复验。
 
-3. **真实客户端 TLS / HTTP 指纹**
+3. **设备 UA / profile 一致性**
+   - SMS-only 结果显示当前 app version + HUAWEI UA 明显优于默认 OnePlus UA。
+   - 需要把服务默认 profile 切到同一 HUAWEI 画像后，再用服务内 Go 客户端复验。
+
+4. **真实客户端 TLS / HTTP 指纹**
    - Python requests 和 curl 都不等同于 Android WhatsApp 网络栈。
    - 需要用服务内 Go 客户端、真机链路或更接近 Android 的请求栈做进一步对照。
 
-4. **设备安装态稳定性**
+5. **设备安装态稳定性**
    - 当前探测多为每个号码生成全新 `fdid`、`expid`、`access_session_id`、`authkey`、key bundle。
    - 真实设备通常有更稳定的安装态，后续可以对比稳定 profile 多次请求与一次性 profile。
 
