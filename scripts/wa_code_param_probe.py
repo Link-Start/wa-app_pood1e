@@ -842,10 +842,10 @@ def run(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Send WA /v2/code parameter probes with random Argentina numbers and one-off shape patches.")
+    parser = argparse.ArgumentParser(description="Send WA /v2/code parameter probes with random AR/CO numbers and one-off shape patches.")
     parser.add_argument("--country", default="AR", help="random phone country; supports AR and CO")
     parser.add_argument("--cc", default="54", help="default country calling code for --phone")
-    parser.add_argument("--phone", action="append", default=[], help="specific phone; can repeat. If omitted, random AR mobile-like numbers are generated")
+    parser.add_argument("--phone", action="append", default=[], help="specific phone; can repeat. If omitted, random numbers for --country are generated")
     parser.add_argument("--count", type=int, default=5, help="random phone count when --phone is omitted")
     parser.add_argument("--proxy", default="", help="HTTP proxy URL. Prefer WA_PROBE_PROXY_URL env to avoid shell history")
     parser.add_argument("--timeout", type=float, default=25)
