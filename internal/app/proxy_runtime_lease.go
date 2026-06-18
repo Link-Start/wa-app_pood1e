@@ -29,11 +29,11 @@ const (
 
 func normalizeRegistrationProxyLeaseMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "", "optional", "best_effort", "best-effort", "try":
+	case "", "optional", "best_effort", "best-effort", "try", "enabled", "enable", "on", "true", "1":
 		return registrationProxyLeaseModeOptional
 	case "disabled", "disable", "off", "false", "0", "none":
 		return registrationProxyLeaseModeDisabled
-	case "required", "require", "on", "true", "1", "force", "forced":
+	case "required", "require", "strict", "force", "forced":
 		return registrationProxyLeaseModeRequired
 	default:
 		return registrationProxyLeaseModeOptional
