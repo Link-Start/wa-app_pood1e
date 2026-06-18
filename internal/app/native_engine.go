@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -264,7 +265,7 @@ func (e *NativeEngine) SubmitVerificationCode(ctx context.Context, input EngineS
 	if err != nil {
 		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
 	}
-	data, enc, err := client.postWASafe(ctx, defaultWARegisterURL, plain, nativeUserAgentForState(state, input.AppVersion), state.Attestation)
+	data, enc, err := postRegisterWithRetry(ctx, client, plain, nativeUserAgentForState(state, input.AppVersion), state.Attestation)
 	state.LastRegister = sanitizeResponse(data)
 	if routingInfo := chatRoutingInfoFromValue(data["edge_routing_info"]); routingInfo != "" {
 		state.ChatRoutingInfo = routingInfo
@@ -298,6 +299,62 @@ func (e *NativeEngine) SubmitVerificationCode(ctx context.Context, input EngineS
 	_ = e.saveState(ctx, input.ClientProfileID, state)
 	completedAt := e.clock.Now()
 	return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED, RegisteredID: "waid_" + stableID(login), ServiceAccountID: lid, ServiceLoginID: login, CompletedAt: completedAt}
+}
+
+func postRegisterWithRetry(ctx context.Context, client *nativeHTTPClient, plain string, userAgent string, attestation nativeSoftwareAttestation) (map[string]any, string, error) {
+	const retryDelay = 700 * time.Millisecond
+	data, enc, err := client.postWASafe(ctx, defaultWARegisterURL, plain, userAgent, attestation)
+	if err == nil || !retryableRegisterHTTPFailure(data, err) {
+		return data, enc, err
+	}
+	log.Printf(
+		"wa_registration_register_retry status=scheduled http_status=%d wa_status=%s wa_reason=%s delay_ms=%d",
+		int(jsonNumber(data["status_code"])),
+		probeLogValue(responseStatus(data)),
+		probeLogValue(responseReason(data)),
+		int(retryDelay/time.Millisecond),
+	)
+	if !sleepContext(ctx, retryDelay) {
+		return data, enc, ctx.Err()
+	}
+	retryData, retryEnc, retryErr := client.postWASafe(ctx, defaultWARegisterURL, plain, userAgent, attestation)
+	if retryErr == nil {
+		log.Printf(
+			"wa_registration_register_retry status=accepted http_status=%d wa_status=%s wa_reason=%s",
+			int(jsonNumber(retryData["status_code"])),
+			probeLogValue(responseStatus(retryData)),
+			probeLogValue(responseReason(retryData)),
+		)
+	} else {
+		log.Printf(
+			"wa_registration_register_retry status=failed http_status=%d wa_status=%s wa_reason=%s retryable=%t",
+			int(jsonNumber(retryData["status_code"])),
+			probeLogValue(responseStatus(retryData)),
+			probeLogValue(responseReason(retryData)),
+			retryableRegisterHTTPFailure(retryData, retryErr),
+		)
+	}
+	return retryData, retryEnc, retryErr
+}
+
+func retryableRegisterHTTPFailure(data map[string]any, err error) bool {
+	if err == nil {
+		return false
+	}
+	statusCode := int(jsonNumber(data["status_code"]))
+	if statusCode == 429 || statusCode >= 500 {
+		return true
+	}
+	if statusCode > 0 {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	for _, marker := range []string{"timeout", "deadline", "temporary", "connection reset", "connection refused", "eof", "proxy", "network"} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *NativeEngine) CheckLoginState(ctx context.Context, input EngineLoginCheckInput) EngineLoginCheckResult {
