@@ -235,7 +235,7 @@ func (g *actionGateway) awaitOTP(ctx context.Context, payload map[string]any) (m
 	if err != nil {
 		return nil, err
 	}
-	if wait.ProxyLease.LeaseID == "" {
+	if wait.ProxyLease.LeaseID == "" && g.server.registrationProxyLeaseEnabled() {
 		if existing, err := g.loadRegistrationOTPWait(ctx, wait.WAAccountID, wait.VerificationRequestID); err == nil {
 			wait.ProxyLease = existing.ProxyLease
 		}
@@ -739,7 +739,7 @@ func (g *actionGateway) registrationSubmitRunner(ctx context.Context, payload ma
 	if err != nil {
 		return nil, WAProxyRoute{}, false, registrationProxyLease{}, err
 	}
-	if wait, err := g.loadRegistrationOTPWait(ctx, textField(payload, "wa_account_id"), textField(payload, "verification_request_id")); err == nil && validRegistrationProxyLease(wait.ProxyLease) {
+	if wait, err := g.loadRegistrationOTPWait(ctx, textField(payload, "wa_account_id"), textField(payload, "verification_request_id")); err == nil && g.server.registrationProxyLeaseEnabled() && validRegistrationProxyLease(wait.ProxyLease) {
 		route := proxyRuntimeLeaseRoute(wait.ProxyLease, WAProxyRoute{Source: waProxySourceSystemCommon, PolicyMode: waProxyModeCommon})
 		proxied, err := engine.WithProxyURL(route.ProxyURL)
 		if err != nil {
