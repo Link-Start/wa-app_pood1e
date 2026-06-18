@@ -20,7 +20,7 @@ type Props = {
 };
 
 export function WaRegistrationChannelButtons({ status, elapsedSeconds, phoneReady, disabled, onStart }: Props) {
-  const methods = channelMethods(status);
+  const methods = channelMethods();
   return (
     <div className="grid gap-2 sm:grid-cols-2">
       {methods.map((method) => {
@@ -48,7 +48,7 @@ export function WaRegistrationChannelButtons({ status, elapsedSeconds, phoneRead
   );
 }
 
-function channelMethods(status: WaProbeStatus | null) {
+function channelMethods() {
   return [
     ...visibleRegistrationChannelMethods.filter((method) => method.directRequest),
     ...visibleRegistrationChannelMethods.filter((method) => !method.directRequest),
