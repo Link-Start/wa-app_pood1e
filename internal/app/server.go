@@ -26,7 +26,7 @@ type Server struct {
 	ids     IDGenerator
 
 	commonProxyURL             string
-	registrationProxyLeaseMode string
+	registrationProxyLeaseMode registrationProxyLeaseMode
 	proxyRuntimeLease          *proxyRuntimeLeaseClient
 	longConnections            *LongConnectionManager
 }

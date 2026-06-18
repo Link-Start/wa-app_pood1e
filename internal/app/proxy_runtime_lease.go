@@ -22,12 +22,14 @@ const (
 	proxyRuntimeLeaseDefaultMinimumTTL     = 30 * time.Second
 	proxyRuntimeLeaseDefaultSelectionTries = 1
 
-	registrationProxyLeaseModeDisabled = "disabled"
-	registrationProxyLeaseModeOptional = "optional"
-	registrationProxyLeaseModeRequired = "required"
+	registrationProxyLeaseModeDisabled registrationProxyLeaseMode = "disabled"
+	registrationProxyLeaseModeOptional registrationProxyLeaseMode = "optional"
+	registrationProxyLeaseModeRequired registrationProxyLeaseMode = "required"
 )
 
-func normalizeRegistrationProxyLeaseMode(mode string) string {
+type registrationProxyLeaseMode string
+
+func normalizeRegistrationProxyLeaseMode(mode string) registrationProxyLeaseMode {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "", "optional", "best_effort", "best-effort", "try", "enabled", "enable", "on", "true", "1":
 		return registrationProxyLeaseModeOptional
@@ -40,19 +42,31 @@ func normalizeRegistrationProxyLeaseMode(mode string) string {
 	}
 }
 
-func (s *Server) effectiveRegistrationProxyLeaseMode() string {
+func (m registrationProxyLeaseMode) String() string {
+	return string(normalizeRegistrationProxyLeaseMode(string(m)))
+}
+
+func (m registrationProxyLeaseMode) enabled() bool {
+	return normalizeRegistrationProxyLeaseMode(string(m)) != registrationProxyLeaseModeDisabled
+}
+
+func (m registrationProxyLeaseMode) required() bool {
+	return normalizeRegistrationProxyLeaseMode(string(m)) == registrationProxyLeaseModeRequired
+}
+
+func (s *Server) effectiveRegistrationProxyLeaseMode() registrationProxyLeaseMode {
 	if s == nil {
 		return registrationProxyLeaseModeOptional
 	}
-	return normalizeRegistrationProxyLeaseMode(s.registrationProxyLeaseMode)
+	return normalizeRegistrationProxyLeaseMode(string(s.registrationProxyLeaseMode))
 }
 
 func (s *Server) registrationProxyLeaseEnabled() bool {
-	return s.effectiveRegistrationProxyLeaseMode() != registrationProxyLeaseModeDisabled
+	return s.effectiveRegistrationProxyLeaseMode().enabled()
 }
 
 func (s *Server) registrationProxyLeaseRequired() bool {
-	return s.effectiveRegistrationProxyLeaseMode() == registrationProxyLeaseModeRequired
+	return s.effectiveRegistrationProxyLeaseMode().required()
 }
 
 type proxyRuntimeLeaseClient struct {
@@ -107,7 +121,7 @@ func (c *proxyRuntimeLeaseClient) acquire(ctx context.Context, input proxyRuntim
 		ttl = proxyRuntimeLeaseDefaultMinimumTTL
 	}
 	labels := map[string]any{
-		"purpose":    proxyRuntimeLeasePurpose,
+		"purpose":    purpose,
 		"session_id": stableID(firstNonEmpty(input.JobKey, accountID+"|"+purpose)),
 	}
 	payload := map[string]any{
@@ -299,40 +313,48 @@ func (g *actionGateway) acquireRegistrationProxyLease(ctx context.Context, paylo
 		return registrationProxyLease{}, route, nil
 	}
 	if g.server.proxyRuntimeLease == nil {
-		if g.server.registrationProxyLeaseRequired() {
-			return registrationProxyLease{}, route, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "proxy runtime lease client is not configured", true)
-		}
-		return registrationProxyLease{}, route, nil
+		return g.optionalRegistrationProxyLeaseError(route, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "proxy runtime lease client is not configured", true), "", payload)
 	}
-	accountID := firstNonEmpty(
-		textField(payload, "proxy_runtime_account_id"),
-		textField(objectField(payload, "proxy"), "proxy_runtime_account_id"),
-		proxyRuntimeLeaseAccountIDFromProxyURL(route.ProxyURL),
-	)
+	accountID := registrationProxyLeaseAccountID(payload, route)
 	if accountID == "" {
-		if g.server.registrationProxyLeaseRequired() {
-			return registrationProxyLease{}, route, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "proxy runtime lease account is not configured", true)
-		}
-		return registrationProxyLease{}, route, nil
+		return g.optionalRegistrationProxyLeaseError(route, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "proxy runtime lease account is not configured", true), "", payload)
 	}
-	ctxData := actionContext(payload)
-	jobKey := firstNonEmpty(
-		ctxData.GetCorrelationId(),
-		ctxData.GetRequestId(),
-		textField(payload, "verification_request_id"),
-		stableID(firstNonEmpty(textField(objectField(payload, "phone"), "e164_number"), textField(payload, "wa_account_id"), accountID)),
-	)
 	lease, err := g.server.proxyRuntimeLease.acquire(ctx, proxyRuntimeLeaseAcquireInput{
 		AccountID:   accountID,
 		Purpose:     proxyRuntimeLeasePurpose,
 		CountryCode: firstNonEmpty(route.CountryCode, proxyCountryCodeFromPayload(payload)),
 		TTL:         ttl,
-		JobKey:      jobKey,
+		JobKey:      registrationProxyLeaseJobKey(payload, accountID),
 	})
 	if err != nil {
-		if g.server.registrationProxyLeaseRequired() {
-			return registrationProxyLease{}, route, err
-		}
+		return g.optionalRegistrationProxyLeaseError(route, err, accountID, payload)
+	}
+	return lease, proxyRuntimeLeaseRoute(lease, route), nil
+}
+
+func registrationProxyLeaseAccountID(payload map[string]any, route WAProxyRoute) string {
+	return firstNonEmpty(
+		textField(payload, "proxy_runtime_account_id"),
+		textField(objectField(payload, "proxy"), "proxy_runtime_account_id"),
+		proxyRuntimeLeaseAccountIDFromProxyURL(route.ProxyURL),
+	)
+}
+
+func registrationProxyLeaseJobKey(payload map[string]any, accountID string) string {
+	ctxData := actionContext(payload)
+	return firstNonEmpty(
+		ctxData.GetCorrelationId(),
+		ctxData.GetRequestId(),
+		textField(payload, "verification_request_id"),
+		stableID(firstNonEmpty(textField(objectField(payload, "phone"), "e164_number"), textField(payload, "wa_account_id"), accountID)),
+	)
+}
+
+func (g *actionGateway) optionalRegistrationProxyLeaseError(route WAProxyRoute, err error, accountID string, payload map[string]any) (registrationProxyLease, WAProxyRoute, error) {
+	if g == nil || g.server == nil || g.server.registrationProxyLeaseRequired() {
+		return registrationProxyLease{}, route, err
+	}
+	if accountID != "" {
 		log.Printf(
 			"wa_registration_proxy_lease_unavailable mode=%s account_hash=%s country_code=%s error=%s",
 			g.server.effectiveRegistrationProxyLeaseMode(),
@@ -340,9 +362,8 @@ func (g *actionGateway) acquireRegistrationProxyLease(ctx context.Context, paylo
 			probeLogValue(firstNonEmpty(route.CountryCode, proxyCountryCodeFromPayload(payload))),
 			probeLogValue(ToProtoError(err).GetMessage()),
 		)
-		return registrationProxyLease{}, route, nil
 	}
-	return lease, proxyRuntimeLeaseRoute(lease, route), nil
+	return registrationProxyLease{}, route, nil
 }
 
 func (g *actionGateway) releaseRegistrationProxyLease(ctx context.Context, lease registrationProxyLease) {
