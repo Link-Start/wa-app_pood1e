@@ -153,7 +153,7 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
             status={channelStatus}
             elapsedSeconds={cooldownElapsedSeconds}
             phoneReady={hasPhoneTarget}
-            disabled={busy || disabled || channelsHardBlocked}
+            disabled={busy || disabled || Boolean(pending) || channelsHardBlocked}
             onStart={(method) => void startRegistration(method)}
           />
         </Field>
