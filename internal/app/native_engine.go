@@ -302,39 +302,40 @@ func (e *NativeEngine) SubmitVerificationCode(ctx context.Context, input EngineS
 }
 
 func postRegisterWithRetry(ctx context.Context, client *nativeHTTPClient, plain string, userAgent string, attestation nativeSoftwareAttestation) (map[string]any, string, error) {
-	const retryDelay = 700 * time.Millisecond
+	const maxRegisterRetries = 2
 	data, enc, err := client.postWASafe(ctx, defaultWARegisterURL, plain, userAgent, attestation)
-	if err == nil || !retryableRegisterHTTPFailure(data, err) {
-		return data, enc, err
-	}
-	log.Printf(
-		"wa_registration_register_retry status=scheduled http_status=%d wa_status=%s wa_reason=%s delay_ms=%d",
-		int(jsonNumber(data["status_code"])),
-		probeLogValue(responseStatus(data)),
-		probeLogValue(responseReason(data)),
-		int(retryDelay/time.Millisecond),
-	)
-	if !sleepContext(ctx, retryDelay) {
-		return data, enc, ctx.Err()
-	}
-	retryData, retryEnc, retryErr := client.postWASafe(ctx, defaultWARegisterURL, plain, userAgent, attestation)
-	if retryErr == nil {
+	for attempt := 1; err != nil && retryableRegisterHTTPFailure(data, err) && attempt <= maxRegisterRetries; attempt++ {
 		log.Printf(
-			"wa_registration_register_retry status=accepted http_status=%d wa_status=%s wa_reason=%s",
-			int(jsonNumber(retryData["status_code"])),
-			probeLogValue(responseStatus(retryData)),
-			probeLogValue(responseReason(retryData)),
+			"wa_registration_register_retry status=scheduled attempt=%d http_status=%d wa_status=%s wa_reason=%s",
+			attempt,
+			int(jsonNumber(data["status_code"])),
+			probeLogValue(responseStatus(data)),
+			probeLogValue(responseReason(data)),
 		)
-	} else {
-		log.Printf(
-			"wa_registration_register_retry status=failed http_status=%d wa_status=%s wa_reason=%s retryable=%t",
-			int(jsonNumber(retryData["status_code"])),
-			probeLogValue(responseStatus(retryData)),
-			probeLogValue(responseReason(retryData)),
-			retryableRegisterHTTPFailure(retryData, retryErr),
-		)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return data, enc, ctxErr
+		}
+		data, enc, err = client.postWASafe(ctx, defaultWARegisterURL, plain, userAgent, attestation)
+		if err == nil {
+			log.Printf(
+				"wa_registration_register_retry status=accepted attempt=%d http_status=%d wa_status=%s wa_reason=%s",
+				attempt,
+				int(jsonNumber(data["status_code"])),
+				probeLogValue(responseStatus(data)),
+				probeLogValue(responseReason(data)),
+			)
+		} else {
+			log.Printf(
+				"wa_registration_register_retry status=failed attempt=%d http_status=%d wa_status=%s wa_reason=%s retryable=%t",
+				attempt,
+				int(jsonNumber(data["status_code"])),
+				probeLogValue(responseStatus(data)),
+				probeLogValue(responseReason(data)),
+				retryableRegisterHTTPFailure(data, err),
+			)
+		}
 	}
-	return retryData, retryEnc, retryErr
+	return data, enc, err
 }
 
 func retryableRegisterHTTPFailure(data map[string]any, err error) bool {
