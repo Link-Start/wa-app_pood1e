@@ -21,10 +21,14 @@ type waProxyResolveRequest struct {
 }
 
 // resolveWAProxyRoute resolves the egress route for a WA registration/probe
-// request: the shared WA_COMMON_PROXY when configured, otherwise a direct
-// connection. There is no per-account policy or dynamic lease.
+// request: a per-account cliproxy sticky route (WA_CLIPROXY_GATEWAY) when
+// configured — one stable exit IP per account across exist/code/register —
+// else the shared WA_COMMON_PROXY, else a direct connection.
 func (g *actionGateway) resolveWAProxyRoute(req waProxyResolveRequest) (wacore.WAProxyRoute, bool) {
 	countryCode := normalizeProxyCountryCode(shared.FirstNonEmpty(req.CountryCode, proxyCountryCodeFromPayload(req.Payload)))
+	if route, ok := g.resolveCliproxyRoute(countryCode, phoneE164FromPayload(req.Payload)); ok {
+		return route, true
+	}
 	if route, ok := g.resolveSystemCommonProxyRoute(countryCode); ok {
 		return route, true
 	}

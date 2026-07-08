@@ -13,6 +13,12 @@ type Config struct {
 	DashboardStaticDir    string `env:"WA_APP_DASHBOARD_STATIC_DIR"`
 	DataDir               string `env:"WA_APP_DATA_DIR"`
 	CommonProxy           string `env:"WA_COMMON_PROXY"`
+	CliproxyEndpoint      string `env:"WA_CLIPROXY_ENDPOINT"`
+	CliproxyUsername      string `env:"WA_CLIPROXY_USERNAME"`
+	CliproxyPassword      string `env:"WA_CLIPROXY_PASSWORD"`
+	CliproxyTTLMinutes    int    `env:"WA_CLIPROXY_TTL_MINUTES"`
+	CliproxyRegion        string `env:"WA_CLIPROXY_REGION"`
+	CliproxySessionSalt   string `env:"WA_CLIPROXY_SESSION_SALT"`
 	PGDSN                 string `env:"WA_APP_PG_DSN"`
 	RedisURL              string `env:"WA_APP_REDIS_URL"`
 	DeviceProfilesFile    string `env:"WA_APP_DEVICE_PROFILES_FILE"`
