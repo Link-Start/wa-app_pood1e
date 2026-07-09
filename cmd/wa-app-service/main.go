@@ -70,20 +70,20 @@ func main() {
 	}
 	service := rpc.NewServer(store, runtime, nativeEngine, clock, ids)
 	service.SetCommonProxyURL(cfg.CommonProxy)
-	service.SetCliproxySettings(rpc.CliproxySettings{
-		Endpoint:               cfg.CliproxyEndpoint,
-		Username:               cfg.CliproxyUsername,
-		Password:               cfg.CliproxyPassword,
-		Region:                 cfg.CliproxyRegion,
-		SessionSalt:            cfg.CliproxySessionSalt,
-		TTLMinutes:             cfg.CliproxyTTLMinutes,
-		Precheck:               cfg.CliproxyPrecheck == nil || *cfg.CliproxyPrecheck,
-		PrecheckMaxAttempts:    cfg.CliproxyPrecheckMaxAttempts,
-		PrecheckEndpoint:       cfg.CliproxyPrecheckEndpoint,
-		PrecheckTimeoutSeconds: cfg.CliproxyPrecheckTimeoutSeconds,
+	service.SetBoltproxySettings(rpc.BoltproxySettings{
+		Endpoint:               cfg.BoltproxyEndpoint,
+		Username:               cfg.BoltproxyUsername,
+		Password:               cfg.BoltproxyPassword,
+		Region:                 cfg.BoltproxyRegion,
+		SessionSalt:            cfg.BoltproxySessionSalt,
+		TTLMinutes:             cfg.BoltproxyTTLMinutes,
+		Precheck:               cfg.BoltproxyPrecheck == nil || *cfg.BoltproxyPrecheck,
+		PrecheckMaxAttempts:    cfg.BoltproxyPrecheckMaxAttempts,
+		PrecheckEndpoint:       cfg.BoltproxyPrecheckEndpoint,
+		PrecheckTimeoutSeconds: cfg.BoltproxyPrecheckTimeoutSeconds,
 	})
-	if strings.TrimSpace(cfg.CliproxyEndpoint) != "" && strings.TrimSpace(cfg.CliproxyUsername) != "" {
-		log.Printf("WA cliproxy dynamic sticky proxy enabled (endpoint=%s, per-account sid; credentials not logged)", cfg.CliproxyEndpoint)
+	if strings.TrimSpace(cfg.BoltproxyEndpoint) != "" && strings.TrimSpace(cfg.BoltproxyUsername) != "" {
+		log.Printf("WA boltproxy dynamic sticky proxy enabled (endpoint=%s, per-account sid; credentials not logged)", cfg.BoltproxyEndpoint)
 	}
 	authConfig := newDashboardAuthConfig(cfg.DashboardAuthPass)
 	grpcListenAddr := configValue(cfg.GRPCListenAddr, defaultGRPCListenAddr)

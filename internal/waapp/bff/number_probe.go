@@ -182,7 +182,7 @@ func buildNumberProbeResult(input map[string]any, proxy map[string]any, fingerpr
 // carries the exit's opaque pin (egress_pin = the validated sticky sid) so the
 // caller can hold it transiently and echo it back on register, letting the
 // registration reuse the exact exit the probe validated. Only present when a real
-// cliproxy exit was resolved (route_id set); direct/common routes have no pin.
+// boltproxy exit was resolved (route_id set); direct/common routes have no pin.
 func numberProbeProxyOut(proxy map[string]any) map[string]any {
 	out := map[string]any{
 		"proxy_mode":   shared.FirstNonEmpty(shared.TextField(proxy, "proxy_mode"), "US_ROTATING_DYNAMIC_IP"),

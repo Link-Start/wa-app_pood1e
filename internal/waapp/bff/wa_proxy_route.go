@@ -31,7 +31,7 @@ func proxyCountryCodeFromPayload(payload map[string]any) string {
 }
 
 // callingCodeToISO2 maps ITU-T E.164 country calling codes (1–3 digits) to
-// ISO-3166 alpha-2 country codes. It drives cliproxy AUTO region selection so the
+// ISO-3166 alpha-2 country codes. It drives boltproxy AUTO region selection so the
 // sticky exit IP lands in the same country as the number being registered.
 // Calling codes are a prefix-free code, so a longest-prefix lookup resolves
 // correctly whether the input is a bare calling code or a full number. Shared

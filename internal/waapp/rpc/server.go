@@ -14,10 +14,11 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// CliproxySettings configures the per-account sticky cliproxy dynamic proxy.
-// Endpoint is host:port (e.g. us.cliproxy.io:3010); the sticky username is built
-// as "<Username>-region-<cc>-sid-<sid8>-t-<ttl>" (region omitted when disabled).
-type CliproxySettings struct {
+// BoltproxySettings configures the per-account sticky boltproxy dynamic proxy.
+// Endpoint is host:port (e.g. ip.boltproxy.org:1600); the sticky username is built
+// as "<Username>-zone-res-country-<cc>-session-<sid8>-sessTime-<ttl>" (country
+// omitted when disabled). Region is the country-selection policy: NONE/AUTO/<cc>.
+type BoltproxySettings struct {
 	Endpoint    string
 	Username    string
 	Password    string
@@ -46,7 +47,7 @@ type serverCore struct {
 	ids     shared.IDGenerator
 
 	commonProxyURL  string
-	cliproxy        CliproxySettings
+	boltproxy       BoltproxySettings
 	longConnections *LongConnectionManager
 }
 
@@ -117,13 +118,13 @@ func newServerFacade(core *serverCore) *Server {
 // Clock, IDs, Store, Runner, Runtime and CommonProxyURL expose the core
 // dependencies that out-of-package consumers (the long-connection manager and
 // the bff action gateway) need without reaching into unexported fields.
-func (s *serverCore) Clock() shared.Clock                { return s.clock }
-func (s *serverCore) IDs() shared.IDGenerator            { return s.ids }
-func (s *serverCore) Store() store.Store                 { return s.store }
-func (s *serverCore) Runner() wacore.ProtocolEngine      { return s.runner }
-func (s *serverCore) Runtime() runtime.RuntimeState      { return s.runtime }
-func (s *serverCore) CommonProxyURL() string             { return s.commonProxyURL }
-func (s *serverCore) CliproxySettings() CliproxySettings { return s.cliproxy }
+func (s *serverCore) Clock() shared.Clock                  { return s.clock }
+func (s *serverCore) IDs() shared.IDGenerator              { return s.ids }
+func (s *serverCore) Store() store.Store                   { return s.store }
+func (s *serverCore) Runner() wacore.ProtocolEngine        { return s.runner }
+func (s *serverCore) Runtime() runtime.RuntimeState        { return s.runtime }
+func (s *serverCore) CommonProxyURL() string               { return s.commonProxyURL }
+func (s *serverCore) BoltproxySettings() BoltproxySettings { return s.boltproxy }
 
 func NewServer(store store.Store, runtime runtime.RuntimeState, runner wacore.ProtocolEngine, clock shared.Clock, ids shared.IDGenerator) *Server {
 	if clock == nil {
@@ -141,13 +142,13 @@ func (s *serverCore) SetCommonProxyURL(common string) {
 	s.commonProxyURL = strings.TrimSpace(common)
 }
 
-func (s *serverCore) SetCliproxySettings(c CliproxySettings) {
+func (s *serverCore) SetBoltproxySettings(c BoltproxySettings) {
 	c.Endpoint = strings.TrimSpace(c.Endpoint)
 	c.Username = strings.TrimSpace(c.Username)
 	c.Region = strings.TrimSpace(c.Region)
 	c.SessionSalt = strings.TrimSpace(c.SessionSalt)
 	c.PrecheckEndpoint = strings.TrimSpace(c.PrecheckEndpoint)
-	s.cliproxy = c
+	s.boltproxy = c
 }
 
 func (s *serverCore) PlayIntegrityAPIConfigured() bool {

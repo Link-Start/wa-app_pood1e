@@ -7,30 +7,30 @@ import (
 )
 
 type Config struct {
-	DashboardAuthPass   string `env:"WA_APP_AUTH_PASSWORD"`
-	GRPCListenAddr      string `env:"WA_APP_LISTEN_ADDR"`
-	DashboardHTTPAddr   string `env:"WA_APP_DASHBOARD_HTTP_ADDR"`
-	DashboardStaticDir  string `env:"WA_APP_DASHBOARD_STATIC_DIR"`
-	DataDir             string `env:"WA_APP_DATA_DIR"`
-	CommonProxy         string `env:"WA_COMMON_PROXY"`
-	CliproxyEndpoint    string `env:"WA_CLIPROXY_ENDPOINT"`
-	CliproxyUsername    string `env:"WA_CLIPROXY_USERNAME"`
-	CliproxyPassword    string `env:"WA_CLIPROXY_PASSWORD"`
-	CliproxyTTLMinutes  int    `env:"WA_CLIPROXY_TTL_MINUTES"`
-	CliproxyRegion      string `env:"WA_CLIPROXY_REGION"`
-	CliproxySessionSalt string `env:"WA_CLIPROXY_SESSION_SALT"`
-	// Cliproxy exit pre-flight check. CliproxyPrecheck is a *bool so an unset env
-	// defaults to enabled-when-cliproxy-is-configured (see cmd/wa-app-service);
+	DashboardAuthPass    string `env:"WA_APP_AUTH_PASSWORD"`
+	GRPCListenAddr       string `env:"WA_APP_LISTEN_ADDR"`
+	DashboardHTTPAddr    string `env:"WA_APP_DASHBOARD_HTTP_ADDR"`
+	DashboardStaticDir   string `env:"WA_APP_DASHBOARD_STATIC_DIR"`
+	DataDir              string `env:"WA_APP_DATA_DIR"`
+	CommonProxy          string `env:"WA_COMMON_PROXY"`
+	BoltproxyEndpoint    string `env:"WA_BOLTPROXY_ENDPOINT"`
+	BoltproxyUsername    string `env:"WA_BOLTPROXY_USERNAME"`
+	BoltproxyPassword    string `env:"WA_BOLTPROXY_PASSWORD"`
+	BoltproxyTTLMinutes  int    `env:"WA_BOLTPROXY_TTL_MINUTES"`
+	BoltproxyRegion      string `env:"WA_BOLTPROXY_REGION"`
+	BoltproxySessionSalt string `env:"WA_BOLTPROXY_SESSION_SALT"`
+	// Boltproxy exit pre-flight check. BoltproxyPrecheck is a *bool so an unset env
+	// defaults to enabled-when-boltproxy-is-configured (see cmd/wa-app-service);
 	// the remaining knobs fall back to package defaults when zero/empty.
-	CliproxyPrecheck               *bool  `env:"WA_CLIPROXY_PRECHECK"`
-	CliproxyPrecheckMaxAttempts    int    `env:"WA_CLIPROXY_PRECHECK_MAX_ATTEMPTS"`
-	CliproxyPrecheckEndpoint       string `env:"WA_CLIPROXY_PRECHECK_ENDPOINT"`
-	CliproxyPrecheckTimeoutSeconds int    `env:"WA_CLIPROXY_PRECHECK_TIMEOUT_SECONDS"`
-	PGDSN                          string `env:"WA_APP_PG_DSN"`
-	RedisURL                       string `env:"WA_APP_REDIS_URL"`
-	DeviceProfilesFile             string `env:"WA_APP_DEVICE_PROFILES_FILE"`
-	PlayIntegrityAPIURL            string `env:"WA_APP_PLAY_INTEGRITY_API_URL"`
-	PlayIntegrityAPIToken          string `env:"WA_APP_PLAY_INTEGRITY_API_TOKEN"`
+	BoltproxyPrecheck               *bool  `env:"WA_BOLTPROXY_PRECHECK"`
+	BoltproxyPrecheckMaxAttempts    int    `env:"WA_BOLTPROXY_PRECHECK_MAX_ATTEMPTS"`
+	BoltproxyPrecheckEndpoint       string `env:"WA_BOLTPROXY_PRECHECK_ENDPOINT"`
+	BoltproxyPrecheckTimeoutSeconds int    `env:"WA_BOLTPROXY_PRECHECK_TIMEOUT_SECONDS"`
+	PGDSN                           string `env:"WA_APP_PG_DSN"`
+	RedisURL                        string `env:"WA_APP_REDIS_URL"`
+	DeviceProfilesFile              string `env:"WA_APP_DEVICE_PROFILES_FILE"`
+	PlayIntegrityAPIURL             string `env:"WA_APP_PLAY_INTEGRITY_API_URL"`
+	PlayIntegrityAPIToken           string `env:"WA_APP_PLAY_INTEGRITY_API_TOKEN"`
 }
 
 func Load() Config {

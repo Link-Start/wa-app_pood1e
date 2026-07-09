@@ -19,30 +19,30 @@ const (
 type waProxyResolveRequest struct {
 	Payload     map[string]any
 	CountryCode string
-	// PinnedSid, when set, is the opaque cliproxy exit a prior probe validated and
+	// PinnedSid, when set, is the opaque boltproxy exit a prior probe validated and
 	// the caller echoed back; the pre-checked resolver reuses that exact exit when
 	// it is still good so the probe and the registration share one sticky IP.
 	PinnedSid string
 }
 
 // resolveWAProxyRoute resolves the egress route for a WA registration/probe
-// request: a per-account cliproxy sticky route (WA_CLIPROXY_GATEWAY) when
+// request: a per-account boltproxy sticky route (WA_BOLTPROXY_GATEWAY) when
 // configured — one stable exit IP per account across exist/code/register —
 // else the shared WA_COMMON_PROXY, else a direct connection. This is the plain
 // deterministic path (no exit pre-check); probes use it.
 func (g *actionGateway) resolveWAProxyRoute(req waProxyResolveRequest) (wacore.WAProxyRoute, bool) {
 	countryCode := proxyRouteCountryCode(req)
-	route, ok := g.resolveCliproxyRoute(countryCode, phoneE164FromPayload(req.Payload))
+	route, ok := g.resolveBoltproxyRoute(countryCode, phoneE164FromPayload(req.Payload))
 	return g.finishWAProxyRoute(countryCode, route, ok)
 }
 
 // resolveWAProxyRoutePrechecked mirrors resolveWAProxyRoute but pre-flights the
-// cliproxy exit (rotating the sticky sid until a non-datacenter exit is found and
+// boltproxy exit (rotating the sticky sid until a non-datacenter exit is found and
 // pinning it) so the registration uses a good, quality-verified exit. Common
 // proxy / direct fallbacks are identical.
 func (g *actionGateway) resolveWAProxyRoutePrechecked(ctx context.Context, req waProxyResolveRequest) (wacore.WAProxyRoute, bool) {
 	countryCode := proxyRouteCountryCode(req)
-	route, ok := g.resolveCliproxyRoutePrechecked(ctx, countryCode, phoneE164FromPayload(req.Payload), strings.TrimSpace(req.PinnedSid))
+	route, ok := g.resolveBoltproxyRoutePrechecked(ctx, countryCode, phoneE164FromPayload(req.Payload), strings.TrimSpace(req.PinnedSid))
 	return g.finishWAProxyRoute(countryCode, route, ok)
 }
 
@@ -50,12 +50,12 @@ func proxyRouteCountryCode(req waProxyResolveRequest) string {
 	return normalizeProxyCountryCode(shared.FirstNonEmpty(req.CountryCode, proxyCountryCodeFromPayload(req.Payload)))
 }
 
-// finishWAProxyRoute applies the shared fallback chain once the cliproxy
+// finishWAProxyRoute applies the shared fallback chain once the boltproxy
 // candidate has been resolved: use it when present, else the common proxy, else
 // direct.
-func (g *actionGateway) finishWAProxyRoute(countryCode string, cliproxyRoute wacore.WAProxyRoute, cliproxyOK bool) (wacore.WAProxyRoute, bool) {
-	if cliproxyOK {
-		return cliproxyRoute, true
+func (g *actionGateway) finishWAProxyRoute(countryCode string, boltproxyRoute wacore.WAProxyRoute, boltproxyOK bool) (wacore.WAProxyRoute, bool) {
+	if boltproxyOK {
+		return boltproxyRoute, true
 	}
 	if route, ok := g.resolveSystemCommonProxyRoute(countryCode); ok {
 		return route, true

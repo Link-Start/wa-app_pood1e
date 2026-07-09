@@ -12,7 +12,7 @@ import (
 // the given proxy URL (http/https/socks5, with optional embedded credentials).
 // It reuses parseOutboundProxyURL so proxy parsing stays consistent, and relies
 // on the stdlib's native http.ProxyURL support rather than hand-rolling a dialer.
-// This is for simple auxiliary calls (e.g. the cliproxy exit pre-check), NOT the
+// This is for simple auxiliary calls (e.g. the boltproxy exit pre-check), NOT the
 // WA registration protocol, which uses the TLS-fingerprinted native client.
 func NewProxyHTTPClient(proxyURL string, timeout time.Duration) (*http.Client, error) {
 	parsed, err := parseOutboundProxyURL(proxyURL)

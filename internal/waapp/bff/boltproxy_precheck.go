@@ -20,19 +20,19 @@ import (
 // source and the good/bad rule are adjusted in one place. Default endpoint is
 // ip-api.com's free JSON API (no key), restricted to the fields we classify on.
 const (
-	cliproxyPrecheckDefaultEndpoint    = "http://ip-api.com/json/?fields=status,message,countryCode,isp,org,as,mobile,proxy,hosting,query"
-	cliproxyPrecheckDefaultMaxAttempts = 5
-	cliproxyPrecheckDefaultTimeoutSecs = 10
-	cliproxyPrecheckResponseSizeLimit  = 1 << 16
-	// cliproxyPinnedExitAttempt is the attempt sentinel logged when the pre-check
+	boltproxyPrecheckDefaultEndpoint    = "http://ip-api.com/json/?fields=status,message,countryCode,isp,org,as,mobile,proxy,hosting,query"
+	boltproxyPrecheckDefaultMaxAttempts = 5
+	boltproxyPrecheckDefaultTimeoutSecs = 10
+	boltproxyPrecheckResponseSizeLimit  = 1 << 16
+	// boltproxyPinnedExitAttempt is the attempt sentinel logged when the pre-check
 	// is re-verifying the exit a prior probe pinned (rather than a 0..N rotation
 	// attempt), so the reuse is visible in logs without exposing the sid meaning.
-	cliproxyPinnedExitAttempt = -1
+	boltproxyPinnedExitAttempt = -1
 )
 
-// cliproxyExitMeta is the value-safe summary of a candidate exit: never the
+// boltproxyExitMeta is the value-safe summary of a candidate exit: never the
 // credential-bearing proxy URL, only the observable exit attributes.
-type cliproxyExitMeta struct {
+type boltproxyExitMeta struct {
 	Country string
 	ISP     string
 	Mobile  bool
@@ -53,102 +53,102 @@ type ipAPIResponse struct {
 	Query       string `json:"query"`
 }
 
-// classifyCliproxyExit turns a raw ip-api JSON body into (ok, meta). ok requires
+// classifyBoltproxyExit turns a raw ip-api JSON body into (ok, meta). ok requires
 // both connectivity (status == "success") and a NON-datacenter IP type
 // (hosting == false, i.e. ISP / residential / mobile — the only types wanted).
 // A proxy==true flag alone does NOT disqualify: a residential-proxy exit is still
 // a residential IP. mobile==true is a good (mobile carrier) exit.
-func classifyCliproxyExit(body []byte) (bool, cliproxyExitMeta, error) {
+func classifyBoltproxyExit(body []byte) (bool, boltproxyExitMeta, error) {
 	var resp ipAPIResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return false, cliproxyExitMeta{}, err
+		return false, boltproxyExitMeta{}, err
 	}
-	meta := cliproxyExitMeta{Country: resp.CountryCode, ISP: resp.ISP, Mobile: resp.Mobile, Hosting: resp.Hosting}
+	meta := boltproxyExitMeta{Country: resp.CountryCode, ISP: resp.ISP, Mobile: resp.Mobile, Hosting: resp.Hosting}
 	if resp.Status != "success" {
 		return false, meta, nil
 	}
 	return !resp.Hosting, meta, nil
 }
 
-// cliproxyExitChecker pre-checks a single candidate exit given its proxy URL. It
+// boltproxyExitChecker pre-checks a single candidate exit given its proxy URL. It
 // is a function so tests can inject a stub and drive rotation without real HTTP.
-type cliproxyExitChecker func(ctx context.Context, proxyURL string) (bool, cliproxyExitMeta, error)
+type boltproxyExitChecker func(ctx context.Context, proxyURL string) (bool, boltproxyExitMeta, error)
 
-// cliproxyExitPrecheck returns the real checker: ONE HTTP GET through the given
-// proxy to the intel endpoint, then classifyCliproxyExit on the body.
-func cliproxyExitPrecheck(endpoint string, timeout time.Duration) cliproxyExitChecker {
-	return func(ctx context.Context, proxyURL string) (bool, cliproxyExitMeta, error) {
+// boltproxyExitPrecheck returns the real checker: ONE HTTP GET through the given
+// proxy to the intel endpoint, then classifyBoltproxyExit on the body.
+func boltproxyExitPrecheck(endpoint string, timeout time.Duration) boltproxyExitChecker {
+	return func(ctx context.Context, proxyURL string) (bool, boltproxyExitMeta, error) {
 		client, err := engine.NewProxyHTTPClient(proxyURL, timeout)
 		if err != nil {
-			return false, cliproxyExitMeta{}, err
+			return false, boltproxyExitMeta{}, err
 		}
 		defer client.CloseIdleConnections()
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
-			return false, cliproxyExitMeta{}, err
+			return false, boltproxyExitMeta{}, err
 		}
 		resp, err := client.Do(req)
 		if err != nil {
-			return false, cliproxyExitMeta{}, err
+			return false, boltproxyExitMeta{}, err
 		}
 		defer resp.Body.Close()
-		body, err := io.ReadAll(io.LimitReader(resp.Body, cliproxyPrecheckResponseSizeLimit))
+		body, err := io.ReadAll(io.LimitReader(resp.Body, boltproxyPrecheckResponseSizeLimit))
 		if err != nil {
-			return false, cliproxyExitMeta{}, err
+			return false, boltproxyExitMeta{}, err
 		}
-		return classifyCliproxyExit(body)
+		return classifyBoltproxyExit(body)
 	}
 }
 
-// cliproxyPrecheckConfig is the resolved (defaults-applied) pre-check policy.
-type cliproxyPrecheckConfig struct {
+// boltproxyPrecheckConfig is the resolved (defaults-applied) pre-check policy.
+type boltproxyPrecheckConfig struct {
 	Enabled     bool
 	MaxAttempts int
 	Endpoint    string
 	Timeout     time.Duration
 }
 
-// cliproxyPrecheckConfigFromSettings resolves the pre-check policy, applying the
+// boltproxyPrecheckConfigFromSettings resolves the pre-check policy, applying the
 // package defaults for any unset knob so the defaults live in one place.
-func cliproxyPrecheckConfigFromSettings(s rpc.CliproxySettings) cliproxyPrecheckConfig {
-	cfg := cliproxyPrecheckConfig{
+func boltproxyPrecheckConfigFromSettings(s rpc.BoltproxySettings) boltproxyPrecheckConfig {
+	cfg := boltproxyPrecheckConfig{
 		Enabled:     s.Precheck,
 		MaxAttempts: s.PrecheckMaxAttempts,
 		Endpoint:    s.PrecheckEndpoint,
 		Timeout:     time.Duration(s.PrecheckTimeoutSeconds) * time.Second,
 	}
 	if cfg.MaxAttempts < 1 {
-		cfg.MaxAttempts = cliproxyPrecheckDefaultMaxAttempts
+		cfg.MaxAttempts = boltproxyPrecheckDefaultMaxAttempts
 	}
 	if cfg.Endpoint == "" {
-		cfg.Endpoint = cliproxyPrecheckDefaultEndpoint
+		cfg.Endpoint = boltproxyPrecheckDefaultEndpoint
 	}
 	if cfg.Timeout <= 0 {
-		cfg.Timeout = cliproxyPrecheckDefaultTimeoutSecs * time.Second
+		cfg.Timeout = boltproxyPrecheckDefaultTimeoutSecs * time.Second
 	}
 	return cfg
 }
 
-// resolveCliproxyRoutePrechecked resolves the sticky cliproxy route for a
+// resolveBoltproxyRoutePrechecked resolves the sticky boltproxy route for a
 // registration, pre-flighting the exit when pre-check is enabled. With pre-check
-// off it is exactly the deterministic buildCliproxyRoute path (no check, no
-// rotation). Not-ok means cliproxy is not configured so the caller falls back to
+// off it is exactly the deterministic buildBoltproxyRoute path (no check, no
+// rotation). Not-ok means boltproxy is not configured so the caller falls back to
 // the common proxy / direct.
-func (g *actionGateway) resolveCliproxyRoutePrechecked(ctx context.Context, countryCode, e164, pinnedSid string) (wacore.WAProxyRoute, bool) {
+func (g *actionGateway) resolveBoltproxyRoutePrechecked(ctx context.Context, countryCode, e164, pinnedSid string) (wacore.WAProxyRoute, bool) {
 	if g == nil || g.server == nil {
 		return wacore.WAProxyRoute{}, false
 	}
-	s := g.server.CliproxySettings()
-	cfg := cliproxyPrecheckConfigFromSettings(s)
+	s := g.server.BoltproxySettings()
+	cfg := boltproxyPrecheckConfigFromSettings(s)
 	if !cfg.Enabled {
 		// With pre-check off every flow uses the deterministic attempt-0 sid, so a
 		// probe and its registration already resolve the identical exit — no pin.
-		return buildCliproxyRoute(s, countryCode, e164)
+		return buildBoltproxyRoute(s, countryCode, e164)
 	}
-	return rotateCliproxyExit(ctx, s, countryCode, e164, pinnedSid, cfg, cliproxyExitPrecheck(cfg.Endpoint, cfg.Timeout))
+	return rotateBoltproxyExit(ctx, s, countryCode, e164, pinnedSid, cfg, boltproxyExitPrecheck(cfg.Endpoint, cfg.Timeout))
 }
 
-// rotateCliproxyExit tries attempts 0..MaxAttempts-1, building the route for each
+// rotateBoltproxyExit tries attempts 0..MaxAttempts-1, building the route for each
 // attempt (attempt 0 = the phone's stable deterministic sid, later attempts a
 // varied sid) and returning the FIRST route whose exit the checker approves
 // (reachable AND non-datacenter). If none qualifies it logs a warning and falls
@@ -161,16 +161,16 @@ func (g *actionGateway) resolveCliproxyRoutePrechecked(ctx context.Context, coun
 // exact IP the probe validated; degraded/expired means it falls through to a
 // fresh 0..N rotation. The pinned sid is skipped inside the loop so it is never
 // re-checked twice.
-func rotateCliproxyExit(ctx context.Context, s rpc.CliproxySettings, countryCode, e164, pinnedSid string, cfg cliproxyPrecheckConfig, check cliproxyExitChecker) (wacore.WAProxyRoute, bool) {
-	baseRoute, ok := buildCliproxyRouteForAttempt(s, countryCode, e164, 0)
+func rotateBoltproxyExit(ctx context.Context, s rpc.BoltproxySettings, countryCode, e164, pinnedSid string, cfg boltproxyPrecheckConfig, check boltproxyExitChecker) (wacore.WAProxyRoute, bool) {
+	baseRoute, ok := buildBoltproxyRouteForAttempt(s, countryCode, e164, 0)
 	if !ok {
 		return wacore.WAProxyRoute{}, false
 	}
 	pinnedSid = strings.TrimSpace(pinnedSid)
 	if pinnedSid != "" {
-		if pinned, ok := buildCliproxyRouteFromSid(s, countryCode, pinnedSid); ok {
+		if pinned, ok := buildBoltproxyRouteFromSid(s, countryCode, pinnedSid); ok {
 			good, meta, err := check(ctx, pinned.ProxyURL)
-			logCliproxyExitPrecheck(pinned, cliproxyPinnedExitAttempt, good, meta, err)
+			logBoltproxyExitPrecheck(pinned, boltproxyPinnedExitAttempt, good, meta, err)
 			if good {
 				return pinned, true
 			}
@@ -181,7 +181,7 @@ func rotateCliproxyExit(ctx context.Context, s rpc.CliproxySettings, countryCode
 		attempts = 1
 	}
 	for attempt := 0; attempt < attempts; attempt++ {
-		route, ok := buildCliproxyRouteForAttempt(s, countryCode, e164, attempt)
+		route, ok := buildBoltproxyRouteForAttempt(s, countryCode, e164, attempt)
 		if !ok {
 			break
 		}
@@ -189,22 +189,22 @@ func rotateCliproxyExit(ctx context.Context, s rpc.CliproxySettings, countryCode
 			continue // already re-checked above as the pinned exit
 		}
 		good, meta, err := check(ctx, route.ProxyURL)
-		logCliproxyExitPrecheck(route, attempt, good, meta, err)
+		logBoltproxyExitPrecheck(route, attempt, good, meta, err)
 		if good {
 			return route, true
 		}
 	}
 	log.Printf(
-		"wa_cliproxy_exit_precheck_fallback sid=%s attempts=%d reason=no_good_exit note=using_deterministic_exit_quality_unverified",
+		"wa_boltproxy_exit_precheck_fallback sid=%s attempts=%d reason=no_good_exit note=using_deterministic_exit_quality_unverified",
 		shared.ProbeLogValue(baseRoute.AccountID),
 		attempts,
 	)
 	return baseRoute, true
 }
 
-func logCliproxyExitPrecheck(route wacore.WAProxyRoute, attempt int, ok bool, meta cliproxyExitMeta, err error) {
+func logBoltproxyExitPrecheck(route wacore.WAProxyRoute, attempt int, ok bool, meta boltproxyExitMeta, err error) {
 	log.Printf(
-		"wa_cliproxy_exit_precheck sid=%s attempt=%d ok=%t exit_country=%s isp=%s mobile=%t hosting=%t error=%s",
+		"wa_boltproxy_exit_precheck sid=%s attempt=%d ok=%t exit_country=%s isp=%s mobile=%t hosting=%t error=%s",
 		shared.ProbeLogValue(route.AccountID),
 		attempt,
 		ok,
@@ -212,14 +212,14 @@ func logCliproxyExitPrecheck(route wacore.WAProxyRoute, attempt int, ok bool, me
 		shared.ProbeLogValue(meta.ISP),
 		meta.Mobile,
 		meta.Hosting,
-		cliproxyPrecheckErrorReason(err),
+		boltproxyPrecheckErrorReason(err),
 	)
 }
 
-// cliproxyPrecheckErrorReason maps a pre-check error to a coarse, value-safe
+// boltproxyPrecheckErrorReason maps a pre-check error to a coarse, value-safe
 // reason token; it never emits the raw error text, so a credential-bearing proxy
 // URL can never leak into logs even if an underlying error mentioned it.
-func cliproxyPrecheckErrorReason(err error) string {
+func boltproxyPrecheckErrorReason(err error) string {
 	if err == nil {
 		return ""
 	}
