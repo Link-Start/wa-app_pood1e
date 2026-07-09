@@ -64,6 +64,11 @@ func TestBuildCliproxyRouteRegion(t *testing.T) {
 	if !strings.Contains(r.ProxyURL, "-region-US-sid-") {
 		t.Fatalf("AUTO region not applied: %s", r.ProxyURL)
 	}
+	// AUTO with a cliproxy-unsupported country (CN) falls back to US.
+	rc, _ := buildCliproxyRoute(s, "CN", "+8613800138000")
+	if !strings.Contains(rc.ProxyURL, "-region-US-sid-") {
+		t.Fatalf("unsupported CN region should fall back to US: %s", rc.ProxyURL)
+	}
 	// AUTO with unknown country omits region.
 	r2, _ := buildCliproxyRoute(s, "", "+15551230001")
 	if strings.Contains(r2.ProxyURL, "-region-") {

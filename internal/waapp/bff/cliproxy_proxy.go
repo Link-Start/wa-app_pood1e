@@ -80,9 +80,31 @@ func buildCliproxyRoute(s rpc.CliproxySettings, countryCode, e164 string) (wacor
 	}, true
 }
 
+// cliproxyFallbackRegion is used when the resolved country is one cliproxy has
+// no exit pool for (see cliproxyUnsupportedRegions): rather than emit a region
+// token cliproxy rejects, fall back to a country it does serve.
+const cliproxyFallbackRegion = "US"
+
+// cliproxyUnsupportedRegions lists countries cliproxy cannot provide an exit in,
+// so an AUTO/explicit region for them is substituted with the US fallback.
+// Extend as more unsupported countries are found.
+var cliproxyUnsupportedRegions = map[string]struct{}{
+	"CN": {}, // cliproxy has no China residential exits
+}
+
+// cliproxySupportedRegion maps a resolved 2-letter region to one cliproxy can
+// serve, substituting the US fallback for unsupported countries.
+func cliproxySupportedRegion(cc string) string {
+	if _, unsupported := cliproxyUnsupportedRegions[cc]; unsupported {
+		return cliproxyFallbackRegion
+	}
+	return cc
+}
+
 // cliproxyRegion resolves the cliproxy region token in the username: "NONE"
 // disables it; "" / "AUTO" derives it from the phone's country code (so the exit
-// IP country matches the number); an explicit value forces that region.
+// IP country matches the number); an explicit value forces that region. Regions
+// cliproxy can't serve (e.g. CN) fall back to US so the request still succeeds.
 func cliproxyRegion(override, countryCode string) string {
 	switch up := strings.ToUpper(strings.TrimSpace(override)); up {
 	case "NONE":
@@ -90,11 +112,11 @@ func cliproxyRegion(override, countryCode string) string {
 	case "", "AUTO":
 		cc := strings.ToUpper(strings.TrimSpace(countryCode))
 		if isAlpha2(cc) {
-			return cc
+			return cliproxySupportedRegion(cc)
 		}
 		return ""
 	default:
-		return up
+		return cliproxySupportedRegion(up)
 	}
 }
 
