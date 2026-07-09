@@ -71,17 +71,28 @@ func buildCliproxyRoute(s rpc.CliproxySettings, countryCode, e164 string) (wacor
 // returns. Only the sid varies across attempts — the region (and thus the exit
 // country) stays fixed so the exit still matches the number's country.
 func buildCliproxyRouteForAttempt(s rpc.CliproxySettings, countryCode, e164 string, attempt int) (wacore.WAProxyRoute, bool) {
+	if strings.TrimSpace(e164) == "" {
+		return wacore.WAProxyRoute{}, false
+	}
+	return buildCliproxyRouteFromSid(s, countryCode, cliproxySidForAttempt(s.SessionSalt, e164, attempt))
+}
+
+// buildCliproxyRouteFromSid builds the sticky route for an explicit sid. It is the
+// shared core of buildCliproxyRouteForAttempt and of the probe→registration exit
+// pin path, which reuses the exact sid the probe already validated instead of
+// re-deriving it from an attempt. The region (exit country) still comes from
+// countryCode, so a pinned sid keeps the number's country.
+func buildCliproxyRouteFromSid(s rpc.CliproxySettings, countryCode, sid string) (wacore.WAProxyRoute, bool) {
 	endpoint := strings.TrimSpace(s.Endpoint)
 	base := strings.TrimSpace(s.Username)
-	if endpoint == "" || base == "" || strings.TrimSpace(s.Password) == "" || strings.TrimSpace(e164) == "" {
+	sid = strings.TrimSpace(sid)
+	if endpoint == "" || base == "" || strings.TrimSpace(s.Password) == "" || sid == "" {
 		return wacore.WAProxyRoute{}, false
 	}
 	ttl := s.TTLMinutes
 	if ttl < 1 {
 		ttl = cliproxyDefaultTTLMin
 	}
-	sid := cliproxySidForAttempt(s.SessionSalt, e164, attempt)
-
 	username := base
 	if region := cliproxyRegion(s.Region, countryCode); region != "" {
 		username += "-region-" + region
@@ -98,6 +109,19 @@ func buildCliproxyRouteForAttempt(s rpc.CliproxySettings, countryCode, e164 stri
 		AccountID:   sid,
 		RouteID:     sid,
 	}, true
+}
+
+// egressPinFromPayload reads the opaque exit pin the number probe returned to the
+// caller (proxy.egress_pin, mirrored as a top-level egress_pin). The caller holds
+// it transiently in the frontend and echoes it back on register so the whole
+// registration reuses the exact cliproxy exit the probe already validated — no
+// backend session storage. It is opaque: the caller never constructs it, and a
+// stale/garbage value is simply re-checked and rotated away from.
+func egressPinFromPayload(payload map[string]any) string {
+	return strings.TrimSpace(shared.FirstNonEmpty(
+		shared.TextField(payload, "egress_pin"),
+		shared.TextField(shared.ObjectField(payload, "proxy"), "egress_pin"),
+	))
 }
 
 // cliproxyFallbackRegion is used when the resolved country is one cliproxy has

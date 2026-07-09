@@ -112,7 +112,7 @@ export async function cleanupPendingRegistrationWaAccounts() {
 }
 
 export const probeWaPhoneSMS = (input: WaPhoneInput) => api<WaWorkflowResponse>('/api/wa/phone/sms-probe', { method: 'POST', body: JSON.stringify(input) });
-export const registerWaPhone = (input: WaPhoneInput, deliveryMethod: VerificationDeliveryMethod, integrityMode?: WaIntegrityMode) => api<WaWorkflowResponse>('/api/wa/register', { method: 'POST', body: JSON.stringify({ ...input, delivery_method: deliveryMethod, ...(integrityMode ? { integrity_mode: integrityMode } : {}) }) });
+export const registerWaPhone = (input: WaPhoneInput, deliveryMethod: VerificationDeliveryMethod, integrityMode?: WaIntegrityMode, egressPin?: string) => api<WaWorkflowResponse>('/api/wa/register', { method: 'POST', body: JSON.stringify({ ...input, delivery_method: deliveryMethod, ...(integrityMode ? { integrity_mode: integrityMode } : {}), ...(egressPin ? { egress_pin: egressPin } : {}) }) });
 export const checkWaLoginState = (input: { login_state_id?: string; registered_identity_id?: string; wa_account_id?: string; client_profile_id?: string; remote_timeout_seconds?: number }) => api<WaWorkflowResponse>('/api/wa/login-state-check', { method: 'POST', body: JSON.stringify(input) });
 
 export async function getWaTwoFactorAuthStatus(account: WAAccount, input: { remoteRefresh?: boolean } = {}) {

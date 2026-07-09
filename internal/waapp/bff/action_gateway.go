@@ -761,12 +761,15 @@ func (g *actionGateway) registrationRunner(payload map[string]any) (*engine.Nati
 // registrationRunnerPrechecked resolves the WA egress route with a cliproxy exit
 // pre-check (rotating the sticky sid until a non-datacenter exit is found) and
 // bakes that single pinned route into the engine, so the whole registration —
-// exist AND code — exits through the one pre-checked IP. Falls back to the plain
+// exist AND code — exits through the one pre-checked IP. When the caller echoes
+// back the probe's egress_pin, that exact exit is reused (re-checked first), so
+// the probe and its registration share one sticky IP. Falls back to the plain
 // deterministic behaviour when pre-check is disabled or cliproxy is unconfigured.
 func (g *actionGateway) registrationRunnerPrechecked(ctx context.Context, payload map[string]any) (*engine.NativeEngine, wacore.WAProxyRoute, bool, error) {
 	route, useProxy := g.resolveWAProxyRoutePrechecked(ctx, waProxyResolveRequest{
 		Payload:     payload,
 		CountryCode: proxyCountryCodeFromPayload(payload),
+		PinnedSid:   egressPinFromPayload(payload),
 	})
 	return g.registrationRunnerForRoute(route, useProxy)
 }

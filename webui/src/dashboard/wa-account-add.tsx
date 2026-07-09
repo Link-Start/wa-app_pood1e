@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { probeWaPhoneSMS, registerWaPhone, submitWaRegistrationOTP, type WaWorkflowResponse } from './wa-api';
-import { probeMatchesValues, registrationFailureMessage, workflowText, type WaAccountAddProbeState } from './wa-account-add-model';
+import { probeEgressPin, probeMatchesValues, registrationFailureMessage, workflowText, type WaAccountAddProbeState } from './wa-account-add-model';
 import { WhatsAppIcon } from './wa-brand-icon';
 import { waPlayIntegrityAvailable } from './wa-dashboard-config';
 import { useWaDashboardHealth, useWaPlayIntegrityAPIStatus } from './wa-dashboard-hooks';
@@ -105,7 +105,7 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
     if (!samePhone || !channelStatus) return onError('请先检测验证通道');
     setBusy(true);
     try {
-      const result = await registerWaPhone(resolved.target.input, method.value, playIntegrityAvailable ? integrityMode : undefined);
+      const result = await registerWaPhone(resolved.target.input, method.value, playIntegrityAvailable ? integrityMode : undefined, probeEgressPin(probe));
       const resultStatus = waProbeStatus(result);
       resetCooldownClock();
       setRegistrationResult(result);

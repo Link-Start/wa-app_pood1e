@@ -15,6 +15,15 @@ export function workflowText(result: WaWorkflowResponse, key: keyof WaWorkflowRe
   return typeof value === 'string' ? value.trim() : '';
 }
 
+// probeEgressPin returns the opaque cliproxy exit pin the probe validated. The
+// caller holds it transiently and echoes it back on register so the registration
+// reuses the exact exit the probe checked (same sticky IP). Absent for direct
+// routes or a failed probe.
+export function probeEgressPin(probe: WaAccountAddProbeState): string | undefined {
+  const pin = probe?.result?.proxy?.egress_pin;
+  return typeof pin === 'string' && pin.trim() !== '' ? pin.trim() : undefined;
+}
+
 export function registrationFailureMessage(result: WaWorkflowResponse, status: WaProbeStatus) {
   const detail = status.failureReason || result.error_message || result.status || '';
   const reason = accountReasonLabel(detail);

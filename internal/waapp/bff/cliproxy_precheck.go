@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
@@ -23,6 +24,10 @@ const (
 	cliproxyPrecheckDefaultMaxAttempts = 5
 	cliproxyPrecheckDefaultTimeoutSecs = 10
 	cliproxyPrecheckResponseSizeLimit  = 1 << 16
+	// cliproxyPinnedExitAttempt is the attempt sentinel logged when the pre-check
+	// is re-verifying the exit a prior probe pinned (rather than a 0..N rotation
+	// attempt), so the reuse is visible in logs without exposing the sid meaning.
+	cliproxyPinnedExitAttempt = -1
 )
 
 // cliproxyExitMeta is the value-safe summary of a candidate exit: never the
@@ -129,16 +134,18 @@ func cliproxyPrecheckConfigFromSettings(s rpc.CliproxySettings) cliproxyPrecheck
 // off it is exactly the deterministic buildCliproxyRoute path (no check, no
 // rotation). Not-ok means cliproxy is not configured so the caller falls back to
 // the common proxy / direct.
-func (g *actionGateway) resolveCliproxyRoutePrechecked(ctx context.Context, countryCode, e164 string) (wacore.WAProxyRoute, bool) {
+func (g *actionGateway) resolveCliproxyRoutePrechecked(ctx context.Context, countryCode, e164, pinnedSid string) (wacore.WAProxyRoute, bool) {
 	if g == nil || g.server == nil {
 		return wacore.WAProxyRoute{}, false
 	}
 	s := g.server.CliproxySettings()
 	cfg := cliproxyPrecheckConfigFromSettings(s)
 	if !cfg.Enabled {
+		// With pre-check off every flow uses the deterministic attempt-0 sid, so a
+		// probe and its registration already resolve the identical exit — no pin.
 		return buildCliproxyRoute(s, countryCode, e164)
 	}
-	return rotateCliproxyExit(ctx, s, countryCode, e164, cfg, cliproxyExitPrecheck(cfg.Endpoint, cfg.Timeout))
+	return rotateCliproxyExit(ctx, s, countryCode, e164, pinnedSid, cfg, cliproxyExitPrecheck(cfg.Endpoint, cfg.Timeout))
 }
 
 // rotateCliproxyExit tries attempts 0..MaxAttempts-1, building the route for each
@@ -148,10 +155,26 @@ func (g *actionGateway) resolveCliproxyRoutePrechecked(ctx context.Context, coun
 // back to the attempt-0 deterministic route so registration still proceeds — a
 // working-but-datacenter exit beats no registration. The checker is injected so
 // the rotation is unit-testable without real network calls.
-func rotateCliproxyExit(ctx context.Context, s rpc.CliproxySettings, countryCode, e164 string, cfg cliproxyPrecheckConfig, check cliproxyExitChecker) (wacore.WAProxyRoute, bool) {
+//
+// When pinnedSid is set (a prior probe's validated exit, echoed back by the
+// caller) it is re-checked FIRST: still-good means the registration reuses the
+// exact IP the probe validated; degraded/expired means it falls through to a
+// fresh 0..N rotation. The pinned sid is skipped inside the loop so it is never
+// re-checked twice.
+func rotateCliproxyExit(ctx context.Context, s rpc.CliproxySettings, countryCode, e164, pinnedSid string, cfg cliproxyPrecheckConfig, check cliproxyExitChecker) (wacore.WAProxyRoute, bool) {
 	baseRoute, ok := buildCliproxyRouteForAttempt(s, countryCode, e164, 0)
 	if !ok {
 		return wacore.WAProxyRoute{}, false
+	}
+	pinnedSid = strings.TrimSpace(pinnedSid)
+	if pinnedSid != "" {
+		if pinned, ok := buildCliproxyRouteFromSid(s, countryCode, pinnedSid); ok {
+			good, meta, err := check(ctx, pinned.ProxyURL)
+			logCliproxyExitPrecheck(pinned, cliproxyPinnedExitAttempt, good, meta, err)
+			if good {
+				return pinned, true
+			}
+		}
 	}
 	attempts := cfg.MaxAttempts
 	if attempts < 1 {
@@ -161,6 +184,9 @@ func rotateCliproxyExit(ctx context.Context, s rpc.CliproxySettings, countryCode
 		route, ok := buildCliproxyRouteForAttempt(s, countryCode, e164, attempt)
 		if !ok {
 			break
+		}
+		if route.RouteID == pinnedSid {
+			continue // already re-checked above as the pinned exit
 		}
 		good, meta, err := check(ctx, route.ProxyURL)
 		logCliproxyExitPrecheck(route, attempt, good, meta, err)

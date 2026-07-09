@@ -19,6 +19,10 @@ const (
 type waProxyResolveRequest struct {
 	Payload     map[string]any
 	CountryCode string
+	// PinnedSid, when set, is the opaque cliproxy exit a prior probe validated and
+	// the caller echoed back; the pre-checked resolver reuses that exact exit when
+	// it is still good so the probe and the registration share one sticky IP.
+	PinnedSid string
 }
 
 // resolveWAProxyRoute resolves the egress route for a WA registration/probe
@@ -38,7 +42,7 @@ func (g *actionGateway) resolveWAProxyRoute(req waProxyResolveRequest) (wacore.W
 // proxy / direct fallbacks are identical.
 func (g *actionGateway) resolveWAProxyRoutePrechecked(ctx context.Context, req waProxyResolveRequest) (wacore.WAProxyRoute, bool) {
 	countryCode := proxyRouteCountryCode(req)
-	route, ok := g.resolveCliproxyRoutePrechecked(ctx, countryCode, phoneE164FromPayload(req.Payload))
+	route, ok := g.resolveCliproxyRoutePrechecked(ctx, countryCode, phoneE164FromPayload(req.Payload), strings.TrimSpace(req.PinnedSid))
 	return g.finishWAProxyRoute(countryCode, route, ok)
 }
 

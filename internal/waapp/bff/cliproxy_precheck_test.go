@@ -95,7 +95,7 @@ func TestRotateCliproxyExitPinsAttemptZeroWhenApprovedImmediately(t *testing.T) 
 		return true, cliproxyExitMeta{Country: "US", ISP: "Comcast", Hosting: false}, nil
 	}
 
-	route, ok := rotateCliproxyExit(context.Background(), s, "US", e164, cfg, check)
+	route, ok := rotateCliproxyExit(context.Background(), s, "US", e164, "", cfg, check)
 	if !ok {
 		t.Fatal("expected a route")
 	}
@@ -108,6 +108,62 @@ func TestRotateCliproxyExitPinsAttemptZeroWhenApprovedImmediately(t *testing.T) 
 	}
 	if route.AccountID != cliproxySessionID(s.SessionSalt, e164)[:cliproxySidLen] {
 		t.Fatal("attempt-0 sid must equal the deterministic per-phone sid")
+	}
+}
+
+func TestRotateCliproxyExitReusesPinnedExitWhenStillGood(t *testing.T) {
+	// The probe pinned attempt-1's exit; at registration it is re-checked FIRST and,
+	// still good, reused verbatim — the probe and registration share one sticky IP.
+	s := precheckTestSettings()
+	e164 := "+15551230001"
+	cfg := cliproxyPrecheckConfigFromSettings(s)
+	pinned := sidForAttempt(s, e164, 1)
+
+	var checked []string
+	check := func(_ context.Context, proxyURL string) (bool, cliproxyExitMeta, error) {
+		checked = append(checked, proxyURL)
+		return true, cliproxyExitMeta{Country: "US", ISP: "Comcast", Hosting: false}, nil
+	}
+
+	route, ok := rotateCliproxyExit(context.Background(), s, "US", e164, pinned, cfg, check)
+	if !ok {
+		t.Fatal("expected a route")
+	}
+	if route.AccountID != pinned {
+		t.Fatalf("expected the pinned sid %q to be reused, got %q", pinned, route.AccountID)
+	}
+	if len(checked) != 1 || !strings.Contains(checked[0], "-sid-"+pinned+"-") {
+		t.Fatalf("expected exactly one pre-check of the pinned exit, got %v", checked)
+	}
+}
+
+func TestRotateCliproxyExitRotatesFreshWhenPinnedExitDegraded(t *testing.T) {
+	// The pinned exit went bad since the probe; it must fall through to a fresh
+	// rotation and never re-check the pinned sid twice.
+	s := precheckTestSettings()
+	e164 := "+15551230001"
+	cfg := cliproxyPrecheckConfigFromSettings(s)
+	pinned := sidForAttempt(s, e164, 0) // pin the deterministic attempt-0 exit
+	good := sidForAttempt(s, e164, 1)
+
+	pinnedChecks := 0
+	check := func(_ context.Context, proxyURL string) (bool, cliproxyExitMeta, error) {
+		if strings.Contains(proxyURL, "-sid-"+pinned+"-") {
+			pinnedChecks++
+			return false, cliproxyExitMeta{Country: "US", ISP: "Hetzner", Hosting: true}, nil
+		}
+		return true, cliproxyExitMeta{Country: "US", ISP: "Comcast", Hosting: false}, nil
+	}
+
+	route, ok := rotateCliproxyExit(context.Background(), s, "US", e164, pinned, cfg, check)
+	if !ok {
+		t.Fatal("expected a route")
+	}
+	if route.AccountID != good {
+		t.Fatalf("expected fresh rotation to attempt-1 %q after pinned exit degraded, got %q", good, route.AccountID)
+	}
+	if pinnedChecks != 1 {
+		t.Fatalf("pinned exit must be checked exactly once (not re-checked in the loop), got %d", pinnedChecks)
 	}
 }
 
@@ -130,7 +186,7 @@ func TestRotateCliproxyExitRotatesUntilGood(t *testing.T) {
 		return true, cliproxyExitMeta{Country: "US", ISP: "Comcast", Hosting: false}, nil
 	}
 
-	route, ok := rotateCliproxyExit(context.Background(), s, "US", e164, cfg, check)
+	route, ok := rotateCliproxyExit(context.Background(), s, "US", e164, "", cfg, check)
 	if !ok {
 		t.Fatal("expected a route")
 	}
@@ -152,7 +208,7 @@ func TestRotateCliproxyExitFallsBackToAttemptZeroWhenNoneGood(t *testing.T) {
 		return false, cliproxyExitMeta{Country: "US", ISP: "Hetzner", Hosting: true}, nil
 	}
 
-	route, ok := rotateCliproxyExit(context.Background(), s, "US", e164, cfg, check)
+	route, ok := rotateCliproxyExit(context.Background(), s, "US", e164, "", cfg, check)
 	if !ok {
 		t.Fatal("fallback must still yield a route (do not hard-fail registration)")
 	}
@@ -173,7 +229,7 @@ func TestRotateCliproxyExitNotConfigured(t *testing.T) {
 		t.Fatal("checker must not run when cliproxy is unconfigured")
 		return false, cliproxyExitMeta{}, nil
 	}
-	if _, ok := rotateCliproxyExit(context.Background(), s, "US", "+15551230001", cfg, check); ok {
+	if _, ok := rotateCliproxyExit(context.Background(), s, "US", "+15551230001", "", cfg, check); ok {
 		t.Fatal("expected not-ok so the caller falls back to common/direct")
 	}
 }

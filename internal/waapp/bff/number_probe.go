@@ -152,7 +152,7 @@ func buildNumberProbeResult(input map[string]any, proxy map[string]any, fingerpr
 		"error_message":           failureReason,
 		"reject_reason":           failureReason,
 		"phone":                   shared.ObjectField(input, "phone"),
-		"proxy":                   map[string]any{"proxy_mode": shared.FirstNonEmpty(shared.TextField(proxy, "proxy_mode"), "US_ROTATING_DYNAMIC_IP"), "country_code": shared.FirstNonEmpty(shared.TextField(proxy, "country_code"), "US")},
+		"proxy":                   numberProbeProxyOut(proxy),
 		"fingerprint_persistence": shared.FirstNonEmpty(shared.TextField(fingerprint, "fingerprint_persistence"), "RANDOM_NOT_COMMITTED"),
 		"fingerprint":             shared.ObjectField(fingerprint, "fingerprint"),
 		"account_probe":           account,
@@ -176,6 +176,22 @@ func buildNumberProbeResult(input map[string]any, proxy map[string]any, fingerpr
 			"can_register":       canRegister,
 		},
 	}
+}
+
+// numberProbeProxyOut is the value-safe proxy summary returned to the caller. It
+// carries the exit's opaque pin (egress_pin = the validated sticky sid) so the
+// caller can hold it transiently and echo it back on register, letting the
+// registration reuse the exact exit the probe validated. Only present when a real
+// cliproxy exit was resolved (route_id set); direct/common routes have no pin.
+func numberProbeProxyOut(proxy map[string]any) map[string]any {
+	out := map[string]any{
+		"proxy_mode":   shared.FirstNonEmpty(shared.TextField(proxy, "proxy_mode"), "US_ROTATING_DYNAMIC_IP"),
+		"country_code": shared.FirstNonEmpty(shared.TextField(proxy, "country_code"), "US"),
+	}
+	if pin := strings.TrimSpace(shared.TextField(proxy, "route_id")); pin != "" {
+		out["egress_pin"] = pin
+	}
+	return out
 }
 
 func numberProbeMethodStatuses(statuses []map[string]any, smsAvailable bool, smsWaitSeconds any) []map[string]any {
