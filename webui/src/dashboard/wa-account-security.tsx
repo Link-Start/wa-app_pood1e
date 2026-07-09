@@ -183,7 +183,7 @@ export function WaAccountSecurityPanel({ account, onDone, onError }: Props) {
               <div className="inline-flex items-center gap-2 text-sm font-medium"><Send size={15} />邮箱 OTP 验证</div>
               <div className="grid gap-2 sm:grid-cols-[auto_1fr_auto]">
                 <Button type="button" variant="outline" disabled={busy} onClick={() => otpRequest.mutate()}><Send size={14} />请求</Button>
-                <Input value={emailOtp} onChange={(event) => setEmailOtp(event.target.value)} inputMode="numeric" autoComplete="one-time-code" type="password" maxLength={6} disabled={busy} placeholder="6 位验证码" />
+                <Input value={emailOtp} onChange={(event) => setEmailOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" type="password" maxLength={6} disabled={busy} placeholder="6 位验证码" />
                 <Button type="button" disabled={busy || emailOtp.length !== 6} onClick={() => otpVerify.mutate()}><CheckCircle2 size={14} />校验</Button>
               </div>
             </div>
@@ -222,7 +222,7 @@ function PinForm({ pin, busy, configured, onPinChange, onSubmit }: { pin: string
       <FieldGroup>
         <Field>
           <FieldLabel>{configured ? '新 6 位 PIN' : '6 位 PIN'}</FieldLabel>
-          <Input value={pin} onChange={(event) => onPinChange(event.target.value)} inputMode="numeric" autoComplete="one-time-code" type="password" maxLength={6} disabled={busy} autoFocus />
+          <Input value={pin} onChange={(event) => onPinChange(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" type="password" maxLength={6} disabled={busy} autoFocus />
         </Field>
       </FieldGroup>
       <Button type="submit" className="w-full" disabled={busy || pin.length !== 6}><KeyRound size={14} />{configured ? '修改 PIN' : '设置 PIN'}</Button>
