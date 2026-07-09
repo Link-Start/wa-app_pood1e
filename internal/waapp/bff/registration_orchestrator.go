@@ -37,25 +37,26 @@ func (g *actionGateway) startRegistration(ctx context.Context, payload map[strin
 		return rejectedRegistrationResult(basePayload, registrationMethodUnsupportedMap(method, reason)), nil
 	}
 	phone := wamodel.NormalizePhone(phoneFromAction(basePayload))
-	state, stateRef, reusedState, err := g.registrationAttemptState(ctx, phone)
+	state, stateRef, err := g.registrationAttemptState(phone)
 	if err != nil {
 		return nil, err
 	}
-	logRegistrationAttemptState(basePayload, phone, reusedState)
+	logRegistrationAttemptState(basePayload, phone)
 	runner, route, managedRoute, err := g.registrationRunner(basePayload)
 	if err != nil {
 		return nil, err
 	}
 	defer runner.CloseIdleConnections()
 	probeResult, state := runner.ProbeAccountWithState(ctx, wacore.EngineRegistrationInput{AppVersion: engine.DefaultWAAppVersion, Phone: phone, DeliveryMethod: method, AuthCodeContext: authCodeContext, IntegrityMode: integrityMode}, state)
-	_ = g.saveRegistrationAttemptState(context.Background(), stateRef, state)
 	logRegistrationProbeResult(basePayload, phone, route, method, probeResult)
 	if !registrationProbeAllowsMethod(probeResult, method) {
+		g.discardRegistrationAttemptState(stateRef)
 		return rejectedRegistrationResult(basePayload, registrationProbeFailureMap(probeResult, route, managedRoute)), nil
 	}
-	codeResult, method, updatedState := g.requestVerificationCodeWithFallback(ctx, runner, phone, method, authCodeContext, integrityMode, state, stateRef)
+	codeResult, method, updatedState := g.requestVerificationCodeWithFallback(ctx, runner, phone, method, authCodeContext, integrityMode, state)
 	logRegistrationCodeResult(basePayload, phone, route, method, codeResult)
 	if !verificationCodeRequestAccepted(codeResult) {
+		g.discardRegistrationAttemptState(stateRef)
 		return rejectedRegistrationResult(basePayload, registrationRequestFailureMap(codeResult, method, route, managedRoute)), nil
 	}
 	account, profile, protocol, err := g.commitNativeState(ctx, phone, updatedState)
@@ -81,7 +82,7 @@ func (g *actionGateway) startRegistration(ctx context.Context, payload map[strin
 		_ = g.discardRejectedRegistration(context.Background(), basePayload, wamodel.WAAccountID(account), verificationRequestID)
 		return nil, err
 	}
-	_ = g.server.Runtime().DeleteTransientState(context.Background(), stateRef)
+	g.discardRegistrationAttemptState(stateRef)
 	response := map[string]any{
 		"success":                 true,
 		"status":                  record.GetStatus().String(),
@@ -111,52 +112,50 @@ func (g *actionGateway) startRegistration(ctx context.Context, payload map[strin
 	return response, nil
 }
 
-func (g *actionGateway) registrationAttemptState(ctx context.Context, phone *waappv1.PhoneTarget) (engine.NativeState, string, bool, error) {
+// registrationAttemptState builds a fresh, transient native state for a
+// registration attempt. The device profile and proxy route it carries live only
+// in memory for the duration of startRegistration; the backend persists nothing
+// here. Durable persistence is reserved for the accepted (code SENT) path, which
+// commits the native state through commitNativeState under a system-owned client
+// profile id. The returned ref lets terminal paths sweep any stale attempt state
+// left for this phone so nothing lingers in backend storage.
+func (g *actionGateway) registrationAttemptState(phone *waappv1.PhoneTarget) (engine.NativeState, string, error) {
 	ref := registrationAttemptStateKey(phone)
-	if data, err := g.server.Runtime().GetTransientState(ctx, ref); err == nil {
-		state, err := engine.UnmarshalNativeState(data)
-		if err == nil {
-			return state, ref, true, nil
-		}
-		_ = g.server.Runtime().DeleteTransientState(ctx, ref)
-	}
 	nativeEngine, err := g.nativeEngine()
 	if err != nil {
-		return engine.NativeState{}, "", false, err
+		return engine.NativeState{}, "", err
 	}
 	state, err := nativeEngine.NewState(phone)
 	if err != nil {
-		return engine.NativeState{}, "", false, err
+		return engine.NativeState{}, "", err
 	}
-	if err := g.saveRegistrationAttemptState(ctx, ref, state); err != nil {
-		return engine.NativeState{}, "", false, err
-	}
-	return state, ref, false, nil
+	return state, ref, nil
 }
 
-func (g *actionGateway) saveRegistrationAttemptState(ctx context.Context, ref string, state engine.NativeState) error {
-	data, err := engine.MarshalNativeState(state)
-	if err != nil {
-		return err
+// discardRegistrationAttemptState removes any transient attempt state left for
+// the phone. A number probe or an unsent (rejected) verification code must never
+// leave a device profile or proxy route behind in backend storage; only the
+// accepted (code SENT) path persists, and it does so via commitNativeState.
+func (g *actionGateway) discardRegistrationAttemptState(ref string) {
+	if strings.TrimSpace(ref) == "" {
+		return
 	}
-	return g.server.Runtime().SaveTransientState(ctx, ref, data, registrationAttemptStateTTL)
+	_ = g.server.Runtime().DeleteTransientState(context.Background(), ref)
 }
 
 func registrationAttemptStateKey(phone *waappv1.PhoneTarget) string {
 	return "wa-register-state:" + shared.StableID(shared.FirstNonEmpty(phone.GetE164Number(), engine.FullPhoneKey(shared.PhoneCC(phone), shared.PhoneNational(phone))))
 }
 
-func logRegistrationAttemptState(payload map[string]any, phone *waappv1.PhoneTarget, reused bool) {
+func logRegistrationAttemptState(payload map[string]any, phone *waappv1.PhoneTarget) {
 	phoneHash := ""
 	if phone != nil && phone.GetE164Number() != "" {
 		phoneHash = shared.StableID(phone.GetE164Number())
 	}
 	log.Printf(
-		"wa_registration_attempt_state correlation=%s phone_hash=%s reused=%t ttl_seconds=%d",
+		"wa_registration_attempt_state correlation=%s phone_hash=%s",
 		shared.ProbeLogValue(actionContext(payload).GetCorrelationId()),
 		phoneHash,
-		reused,
-		int64(registrationAttemptStateTTL/time.Second),
 	)
 }
 
@@ -293,14 +292,13 @@ var registrationFallbackMethods = map[waappv1.VerificationDeliveryMethod]bool{
 // server lists in fallback_methods when the current method fails non-terminally
 // (next_method, no_routes, provider timeout, cooldown). It stops on the first
 // accepted request, a terminal rejection, or once no offered method remains.
-func (g *actionGateway) requestVerificationCodeWithFallback(ctx context.Context, runner *engine.NativeEngine, phone *waappv1.PhoneTarget, requested waappv1.VerificationDeliveryMethod, authCodeContext string, integrityMode wacore.IntegrityMode, state engine.NativeState, stateRef string) (wacore.EngineCodeResult, waappv1.VerificationDeliveryMethod, engine.NativeState) {
+func (g *actionGateway) requestVerificationCodeWithFallback(ctx context.Context, runner *engine.NativeEngine, phone *waappv1.PhoneTarget, requested waappv1.VerificationDeliveryMethod, authCodeContext string, integrityMode wacore.IntegrityMode, state engine.NativeState) (wacore.EngineCodeResult, waappv1.VerificationDeliveryMethod, engine.NativeState) {
 	tried := map[waappv1.VerificationDeliveryMethod]bool{}
 	current := requested
 	currentState := state
 	var result wacore.EngineCodeResult
 	for {
 		result, currentState = runner.RequestVerificationCodeWithState(ctx, wacore.EngineRegistrationInput{AppVersion: engine.DefaultWAAppVersion, Phone: phone, DeliveryMethod: current, AuthCodeContext: authCodeContext, IntegrityMode: integrityMode}, currentState)
-		_ = g.saveRegistrationAttemptState(context.Background(), stateRef, currentState)
 		tried[current] = true
 		if verificationCodeRequestAccepted(result) || !codeFailureAllowsFallback(result) {
 			return result, current, currentState

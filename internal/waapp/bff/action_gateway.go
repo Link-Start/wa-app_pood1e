@@ -23,7 +23,6 @@ import (
 )
 
 const transientStateTTL = 30 * time.Minute
-const registrationAttemptStateTTL = 26 * time.Hour
 const registrationOTPWaitDefaultTTL = 20 * time.Minute
 
 type actionGateway struct{ server *rpc.Server }
