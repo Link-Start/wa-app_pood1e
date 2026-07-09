@@ -39,7 +39,7 @@ type LongConnectionHost interface {
 	CheckLoginStateWithRunner(ctx context.Context, req *waappv1.CheckLoginStateRequest, runner wacore.ProtocolEngine) (*waappv1.CheckLoginStateResponse, error)
 	decryptMessage(ctx context.Context, req *waappv1.DecryptMessageRequest, runner wacore.ProtocolEngine, otpSource waappv1.WaOtpSource) (*waappv1.DecryptMessageResponse, error)
 	GetWAAccountRecord(ctx context.Context, accountID string) (*waappv1.WAAccount, error)
-	longConnectionRunner(ctx context.Context, loginState *waappv1.LoginState, session *waappv1.MessageSession) (wacore.ProtocolEngine, error)
+	longConnectionRunner(ctx context.Context, loginState *waappv1.LoginState, session *waappv1.MessageSession, continuity wacore.LoginContinuity) (wacore.ProtocolEngine, error)
 	markLoginTransferredOut(ctx context.Context, loginState *waappv1.LoginState, cause error)
 	receiveMessageBatch(ctx context.Context, req *waappv1.ReceiveMessageBatchRequest, runner wacore.ProtocolEngine) (*waappv1.ReceiveMessageBatchResponse, error)
 	SaveWAAccountRecord(ctx context.Context, account *waappv1.WAAccount) (*waappv1.WAAccount, error)
@@ -404,6 +404,10 @@ func (m *LongConnectionManager) longConnectionStopped(loginState *waappv1.LoginS
 func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv1.LoginState, key string) {
 	backoff := longConnectionInitialBackoff
 	reconnects := int32(0)
+	// Stable ClientPayload session id for this logical long connection: generated once and
+	// reused (unchanged) on every reconnect so the WA server recognizes reconnects as the
+	// same session instead of a hostile takeover.
+	sessionID := engine.NewLoginSessionID()
 	defer m.markStopped(key)
 	for ctx.Err() == nil {
 		m.update(key, func(snapshot *waappv1.LongConnectionState) {
@@ -437,7 +441,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 			snapshot.MessageSessionId = session.GetMessageSessionId()
 			snapshot.LastError = nil
 		})
-		runner, err := m.host.longConnectionRunner(connectionCtx, loginState, session)
+		runner, err := m.host.longConnectionRunner(connectionCtx, loginState, session, longConnectionContinuity(sessionID, reconnects))
 		if err != nil {
 			stopConnection()
 			if ctx.Err() != nil {
@@ -732,19 +736,19 @@ func (s *serverCore) markLoginTransferredOut(ctx context.Context, loginState *wa
 	s.revokeLongConnection(registeredIdentityID, cause)
 }
 
-func (s *serverCore) longConnectionRunner(ctx context.Context, loginState *waappv1.LoginState, session *waappv1.MessageSession) (wacore.ProtocolEngine, error) {
+func (s *serverCore) longConnectionRunner(ctx context.Context, loginState *waappv1.LoginState, session *waappv1.MessageSession, continuity wacore.LoginContinuity) (wacore.ProtocolEngine, error) {
 	nativeEngine, ok := s.runner.(*engine.NativeEngine)
 	if !ok {
 		return s.runner, nil
 	}
-	input := longConnectionEngineInput(session)
+	input := longConnectionEngineInput(session, continuity)
 	input.AppVersion = s.protocolIDAppVersion(ctx, input.ProtocolProfileID)
 	return engine.NewLongConnectionNativeEngine(nativeEngine, engine.LongConnectionNativeEngineOptions{Input: input}), nil
 }
 
-func longConnectionEngineInput(session *waappv1.MessageSession) wacore.EngineMessageInput {
+func longConnectionEngineInput(session *waappv1.MessageSession, continuity wacore.LoginContinuity) wacore.EngineMessageInput {
 	if session == nil {
-		return wacore.EngineMessageInput{}
+		return wacore.EngineMessageInput{LoginContinuity: continuity}
 	}
 	return wacore.EngineMessageInput{
 		WAAccountID:          session.GetWaAccountId(),
@@ -752,7 +756,23 @@ func longConnectionEngineInput(session *waappv1.MessageSession) wacore.EngineMes
 		RegisteredIdentityID: session.GetRegisteredIdentityId(),
 		ProtocolProfileID:    session.GetProtocolProfileId(),
 		MessageSessionID:     session.GetMessageSessionId(),
+		LoginContinuity:      continuity,
 	}
+}
+
+// longConnectionContinuity derives the ClientPayload continuity for a single reconnect
+// iteration: a stable session id, the reconnect attempt count, and the reason
+// (USER_ACTIVATED on the first connect, ERROR_RECONNECT on automatic reconnects).
+func longConnectionContinuity(sessionID uint32, reconnects int32) wacore.LoginContinuity {
+	continuity := wacore.LoginContinuity{
+		SessionID:           sessionID,
+		ConnectAttemptCount: uint32(reconnects),
+		ConnectReason:       wacore.WAConnectReasonUserActivated,
+	}
+	if reconnects > 0 {
+		continuity.ConnectReason = wacore.WAConnectReasonErrorReconnect
+	}
+	return continuity
 }
 
 func longConnectionKey(loginState *waappv1.LoginState) string {

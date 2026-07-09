@@ -25,6 +25,7 @@ type LongConnectionNativeEngine struct {
 	cond        *sync.Cond
 	session     *chatdSession
 	input       wacore.EngineMessageInput
+	continuity  wacore.LoginContinuity
 	pending     []chatdReceivedItem
 	pendingUp   chatdSessionUpdate
 	activeRead  *longConnectionActiveRead
@@ -56,7 +57,7 @@ func NewLongConnectionNativeEngine(engine *NativeEngine, opts LongConnectionNati
 	if cleanup == nil {
 		cleanup = func() {}
 	}
-	runner := &LongConnectionNativeEngine{NativeEngine: engine, fallback: opts.Fallback, input: opts.Input, release: cleanup}
+	runner := &LongConnectionNativeEngine{NativeEngine: engine, fallback: opts.Fallback, input: opts.Input, continuity: opts.Input.LoginContinuity, release: cleanup}
 	runner.cond = sync.NewCond(&runner.mu)
 	return runner
 }
@@ -451,7 +452,8 @@ func (e *LongConnectionNativeEngine) openSessionWithEngine(ctx context.Context, 
 	cfg := chatdConfigForState(proxyURL, state, longConnectionChatdAttemptTimeout)
 	cfg.Endpoints = longConnectionChatdEndpoints(state)
 	client := newChatdClient(cfg)
-	session, err := client.openSession(ctx, state, input.RegisteredIdentityID, defaultLoginPayload, input.AppVersion)
+	payloadBuilder := longConnectionLoginPayloadBuilder(e.continuity)
+	session, err := client.openSession(ctx, state, input.RegisteredIdentityID, payloadBuilder, input.AppVersion)
 	if err != nil {
 		return nil, err
 	}

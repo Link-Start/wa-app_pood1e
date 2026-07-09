@@ -61,6 +61,33 @@ type EngineLoginCheckInput struct {
 	RemoteTimeout        time.Duration
 }
 
+// WAConnectReason mirrors WhatsApp's ClientPayload.connectReason enum. The long
+// connection reports USER_ACTIVATED on its first connect and ERROR_RECONNECT on every
+// automatic reconnect, so the server treats a reconnect as session continuity rather
+// than a hostile foreground takeover.
+type WAConnectReason uint32
+
+const (
+	WAConnectReasonPush           WAConnectReason = 0
+	WAConnectReasonUserActivated  WAConnectReason = 1
+	WAConnectReasonScheduled      WAConnectReason = 2
+	WAConnectReasonErrorReconnect WAConnectReason = 3
+	WAConnectReasonNetworkSwitch  WAConnectReason = 4
+	WAConnectReasonPingReconnect  WAConnectReason = 5
+	WAConnectReasonUnknown        WAConnectReason = 6
+)
+
+// LoginContinuity carries the per-long-connection ClientPayload identifiers that let the
+// WA server recognize a reconnect as the same logical session. SessionID is generated
+// once and kept stable across all reconnects; ConnectAttemptCount increments per
+// reconnect; ConnectReason is USER_ACTIVATED on the first connect and ERROR_RECONNECT
+// afterwards.
+type LoginContinuity struct {
+	SessionID           uint32
+	ConnectAttemptCount uint32
+	ConnectReason       WAConnectReason
+}
+
 type EngineMessageInput struct {
 	WAAccountID          string
 	ClientProfileID      string
@@ -70,6 +97,7 @@ type EngineMessageInput struct {
 	MessageSessionID     string
 	WaitTimeout          time.Duration
 	MaxMessages          int
+	LoginContinuity      LoginContinuity
 }
 
 type EngineDecryptInput struct {

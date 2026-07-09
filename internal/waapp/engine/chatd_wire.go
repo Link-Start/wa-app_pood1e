@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -90,6 +91,12 @@ func pbKey(fieldNo int, wireType int) []byte {
 func pbVarintField(fieldNo int, value uint64) []byte {
 	out := pbKey(fieldNo, 0)
 	out = append(out, pbVarint(value)...)
+	return out
+}
+
+func pbFixed32Field(fieldNo int, value uint32) []byte {
+	out := pbKey(fieldNo, 5)
+	out = append(out, byte(value), byte(value>>8), byte(value>>16), byte(value>>24))
 	return out
 }
 
@@ -480,7 +487,7 @@ type userAgentConfig struct {
 }
 
 type loginPayloadConfig struct {
-	sessionID           uint64
+	sessionID           uint32
 	passive             bool
 	pushName            string
 	shortConnect        bool
@@ -545,7 +552,7 @@ func buildLoginPayload(identity loginIdentity, ua userAgentConfig, cfg loginPayl
 	out = append(out, pbBoolField(3, cfg.passive)...)
 	out = append(out, pbBytesField(5, buildUserAgentPayload(ua))...)
 	out = append(out, pbStringField(7, cfg.pushName)...)
-	out = append(out, pbVarintField(9, cfg.sessionID)...)
+	out = append(out, pbFixed32Field(9, cfg.sessionID)...)
 	out = append(out, pbBoolField(10, cfg.shortConnect)...)
 	out = append(out, pbVarintField(12, cfg.connectType)...)
 	out = append(out, pbVarintField(13, cfg.connectReason)...)
@@ -559,20 +566,62 @@ func buildLoginPayload(identity loginIdentity, ua userAgentConfig, cfg loginPayl
 	return out
 }
 
+// NewLoginSessionID returns a random non-zero 32-bit ClientPayload session id. The long
+// connection generates one per logical connection and reuses it across every reconnect so
+// the WA server recognizes the reconnect as the same session (sfixed32 field 9). A zero id
+// reads as UNSET on the wire, so it is avoided.
+func NewLoginSessionID() uint32 {
+	buf := make([]byte, 4)
+	if _, err := io.ReadFull(rand.Reader, buf); err != nil {
+		return 1
+	}
+	id := binary.LittleEndian.Uint32(buf)
+	if id == 0 {
+		id = 1
+	}
+	return id
+}
+
+// defaultLoginPayload builds the active (non-passive) login payload for short-lived,
+// one-shot operations (send, read receipt, account IQ, number probe). Each gets a fresh
+// random session id, USER_ACTIVATED reason, and attempt count 0 — correct for an
+// independent foreground session.
 func defaultLoginPayload(identity loginIdentity, state NativeState, version string) []byte {
-	return loginPayload(identity, state, version, false, false)
+	return loginPayload(identity, state, version, false, false, oneShotLoginContinuity())
 }
 
+// passiveLoginCheckPayload builds the passive login-state probe payload. It stays passive
+// and short-connect; the session id still uses sfixed32 field 9.
 func passiveLoginCheckPayload(identity loginIdentity, state NativeState, version string) []byte {
-	return loginPayload(identity, state, version, true, true)
+	return loginPayload(identity, state, version, true, true, oneShotLoginContinuity())
 }
 
-func loginPayload(identity loginIdentity, state NativeState, version string, passive bool, shortConnect bool) []byte {
+// longConnectionLoginPayloadBuilder binds the stable per-connection continuity (session
+// id, reconnect reason, attempt count) threaded from the reconnect loop into an active
+// login-payload builder for the shared long connection.
+func longConnectionLoginPayloadBuilder(continuity wacore.LoginContinuity) func(loginIdentity, NativeState, string) []byte {
+	return func(identity loginIdentity, state NativeState, version string) []byte {
+		return loginPayload(identity, state, version, false, false, continuity)
+	}
+}
+
+func oneShotLoginContinuity() wacore.LoginContinuity {
+	return wacore.LoginContinuity{SessionID: NewLoginSessionID(), ConnectReason: wacore.WAConnectReasonUserActivated}
+}
+
+func loginPayload(identity loginIdentity, state NativeState, version string, passive bool, shortConnect bool, continuity wacore.LoginContinuity) []byte {
 	ua := chatdUserAgentForState(state, version)
-	buf := make([]byte, 8)
-	_, _ = io.ReadFull(rand.Reader, buf)
-	sessionID := binary.BigEndian.Uint64(buf)&0x7fffffff + 1
-	cfg := loginPayloadConfig{sessionID: sessionID, passive: passive, shortConnect: shortConnect, connectType: 1, connectReason: 1, product: 0, oc: true, lc: 0}
+	cfg := loginPayloadConfig{
+		sessionID:           continuity.SessionID,
+		passive:             passive,
+		shortConnect:        shortConnect,
+		connectType:         1,
+		connectReason:       uint64(continuity.ConnectReason),
+		connectAttemptCount: uint64(continuity.ConnectAttemptCount),
+		product:             0,
+		oc:                  true,
+		lc:                  0,
+	}
 	return buildLoginPayload(identity, ua, cfg)
 }
 
