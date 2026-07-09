@@ -35,6 +35,18 @@ func cliproxySessionID(salt, e164 string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// cliproxySidForAttempt derives the sticky sid for a rotation attempt. Attempt 0
+// keeps the phone's stable deterministic sid (cliproxySessionID(salt, e164)) so a
+// good first exit preserves the per-phone sticky IP; each later attempt varies the
+// seed ("<e164>#<attempt>") so cliproxy hands out a DIFFERENT exit.
+func cliproxySidForAttempt(salt, e164 string, attempt int) string {
+	seed := e164
+	if attempt > 0 {
+		seed = e164 + "#" + strconv.Itoa(attempt)
+	}
+	return cliproxySessionID(salt, seed)[:cliproxySidLen]
+}
+
 func (g *actionGateway) resolveCliproxyRoute(countryCode, e164 string) (wacore.WAProxyRoute, bool) {
 	if g == nil || g.server == nil {
 		return wacore.WAProxyRoute{}, false
@@ -51,6 +63,14 @@ func (g *actionGateway) resolveCliproxyRoute(countryCode, e164 string) (wacore.W
 // credential-bearing ProxyURL is never logged (callers log only the opaque sid
 // via AccountID/RouteID).
 func buildCliproxyRoute(s rpc.CliproxySettings, countryCode, e164 string) (wacore.WAProxyRoute, bool) {
+	return buildCliproxyRouteForAttempt(s, countryCode, e164, 0)
+}
+
+// buildCliproxyRouteForAttempt builds the sticky route for a specific rotation
+// attempt; attempt 0 is the deterministic per-phone route buildCliproxyRoute
+// returns. Only the sid varies across attempts — the region (and thus the exit
+// country) stays fixed so the exit still matches the number's country.
+func buildCliproxyRouteForAttempt(s rpc.CliproxySettings, countryCode, e164 string, attempt int) (wacore.WAProxyRoute, bool) {
 	endpoint := strings.TrimSpace(s.Endpoint)
 	base := strings.TrimSpace(s.Username)
 	if endpoint == "" || base == "" || strings.TrimSpace(s.Password) == "" || strings.TrimSpace(e164) == "" {
@@ -60,7 +80,7 @@ func buildCliproxyRoute(s rpc.CliproxySettings, countryCode, e164 string) (wacor
 	if ttl < 1 {
 		ttl = cliproxyDefaultTTLMin
 	}
-	sid := cliproxySessionID(s.SessionSalt, e164)[:cliproxySidLen]
+	sid := cliproxySidForAttempt(s.SessionSalt, e164, attempt)
 
 	username := base
 	if region := cliproxyRegion(s.Region, countryCode); region != "" {

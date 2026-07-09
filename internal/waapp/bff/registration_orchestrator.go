@@ -42,7 +42,10 @@ func (g *actionGateway) startRegistration(ctx context.Context, payload map[strin
 		return nil, err
 	}
 	logRegistrationAttemptState(basePayload, phone)
-	runner, route, managedRoute, err := g.registrationRunner(basePayload)
+	// Resolve the (pre-checked) egress route ONCE and pin it into a single runner
+	// reused for exist AND code, so the exit whose IP was pre-flighted is exactly
+	// the one that registers.
+	runner, route, managedRoute, err := g.registrationRunnerPrechecked(ctx, basePayload)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package bff
 
 import (
+	"context"
 	"strings"
 
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
@@ -23,11 +24,34 @@ type waProxyResolveRequest struct {
 // resolveWAProxyRoute resolves the egress route for a WA registration/probe
 // request: a per-account cliproxy sticky route (WA_CLIPROXY_GATEWAY) when
 // configured — one stable exit IP per account across exist/code/register —
-// else the shared WA_COMMON_PROXY, else a direct connection.
+// else the shared WA_COMMON_PROXY, else a direct connection. This is the plain
+// deterministic path (no exit pre-check); probes use it.
 func (g *actionGateway) resolveWAProxyRoute(req waProxyResolveRequest) (wacore.WAProxyRoute, bool) {
-	countryCode := normalizeProxyCountryCode(shared.FirstNonEmpty(req.CountryCode, proxyCountryCodeFromPayload(req.Payload)))
-	if route, ok := g.resolveCliproxyRoute(countryCode, phoneE164FromPayload(req.Payload)); ok {
-		return route, true
+	countryCode := proxyRouteCountryCode(req)
+	route, ok := g.resolveCliproxyRoute(countryCode, phoneE164FromPayload(req.Payload))
+	return g.finishWAProxyRoute(countryCode, route, ok)
+}
+
+// resolveWAProxyRoutePrechecked mirrors resolveWAProxyRoute but pre-flights the
+// cliproxy exit (rotating the sticky sid until a non-datacenter exit is found and
+// pinning it) so the registration uses a good, quality-verified exit. Common
+// proxy / direct fallbacks are identical.
+func (g *actionGateway) resolveWAProxyRoutePrechecked(ctx context.Context, req waProxyResolveRequest) (wacore.WAProxyRoute, bool) {
+	countryCode := proxyRouteCountryCode(req)
+	route, ok := g.resolveCliproxyRoutePrechecked(ctx, countryCode, phoneE164FromPayload(req.Payload))
+	return g.finishWAProxyRoute(countryCode, route, ok)
+}
+
+func proxyRouteCountryCode(req waProxyResolveRequest) string {
+	return normalizeProxyCountryCode(shared.FirstNonEmpty(req.CountryCode, proxyCountryCodeFromPayload(req.Payload)))
+}
+
+// finishWAProxyRoute applies the shared fallback chain once the cliproxy
+// candidate has been resolved: use it when present, else the common proxy, else
+// direct.
+func (g *actionGateway) finishWAProxyRoute(countryCode string, cliproxyRoute wacore.WAProxyRoute, cliproxyOK bool) (wacore.WAProxyRoute, bool) {
+	if cliproxyOK {
+		return cliproxyRoute, true
 	}
 	if route, ok := g.resolveSystemCommonProxyRoute(countryCode); ok {
 		return route, true

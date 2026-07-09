@@ -24,6 +24,15 @@ type CliproxySettings struct {
 	Region      string
 	SessionSalt string
 	TTLMinutes  int
+
+	// Exit pre-flight check: when Precheck is set, the sticky sid is rotated until
+	// an exit whose IP is a non-datacenter (ISP/residential/mobile) type is found,
+	// then pinned for the whole registration. Zero MaxAttempts/Endpoint/Timeout
+	// fall back to the bff package defaults.
+	Precheck               bool
+	PrecheckMaxAttempts    int
+	PrecheckEndpoint       string
+	PrecheckTimeoutSeconds int
 }
 
 // serverCore holds the injected collaborators plus every cross-service helper and
@@ -137,6 +146,7 @@ func (s *serverCore) SetCliproxySettings(c CliproxySettings) {
 	c.Username = strings.TrimSpace(c.Username)
 	c.Region = strings.TrimSpace(c.Region)
 	c.SessionSalt = strings.TrimSpace(c.SessionSalt)
+	c.PrecheckEndpoint = strings.TrimSpace(c.PrecheckEndpoint)
 	s.cliproxy = c
 }
 

@@ -751,14 +751,31 @@ func (g *actionGateway) nativeEngineForPayload(payload map[string]any) (*engine.
 }
 
 func (g *actionGateway) registrationRunner(payload map[string]any) (*engine.NativeEngine, wacore.WAProxyRoute, bool, error) {
-	engine, err := g.nativeEngine()
-	if err != nil {
-		return nil, wacore.WAProxyRoute{}, false, err
-	}
 	route, useProxy := g.resolveWAProxyRoute(waProxyResolveRequest{
 		Payload:     payload,
 		CountryCode: proxyCountryCodeFromPayload(payload),
 	})
+	return g.registrationRunnerForRoute(route, useProxy)
+}
+
+// registrationRunnerPrechecked resolves the WA egress route with a cliproxy exit
+// pre-check (rotating the sticky sid until a non-datacenter exit is found) and
+// bakes that single pinned route into the engine, so the whole registration —
+// exist AND code — exits through the one pre-checked IP. Falls back to the plain
+// deterministic behaviour when pre-check is disabled or cliproxy is unconfigured.
+func (g *actionGateway) registrationRunnerPrechecked(ctx context.Context, payload map[string]any) (*engine.NativeEngine, wacore.WAProxyRoute, bool, error) {
+	route, useProxy := g.resolveWAProxyRoutePrechecked(ctx, waProxyResolveRequest{
+		Payload:     payload,
+		CountryCode: proxyCountryCodeFromPayload(payload),
+	})
+	return g.registrationRunnerForRoute(route, useProxy)
+}
+
+func (g *actionGateway) registrationRunnerForRoute(route wacore.WAProxyRoute, useProxy bool) (*engine.NativeEngine, wacore.WAProxyRoute, bool, error) {
+	engine, err := g.nativeEngine()
+	if err != nil {
+		return nil, wacore.WAProxyRoute{}, false, err
+	}
 	if !useProxy {
 		return engine, route, false, nil
 	}

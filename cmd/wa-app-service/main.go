@@ -71,12 +71,16 @@ func main() {
 	service := rpc.NewServer(store, runtime, nativeEngine, clock, ids)
 	service.SetCommonProxyURL(cfg.CommonProxy)
 	service.SetCliproxySettings(rpc.CliproxySettings{
-		Endpoint:    cfg.CliproxyEndpoint,
-		Username:    cfg.CliproxyUsername,
-		Password:    cfg.CliproxyPassword,
-		Region:      cfg.CliproxyRegion,
-		SessionSalt: cfg.CliproxySessionSalt,
-		TTLMinutes:  cfg.CliproxyTTLMinutes,
+		Endpoint:               cfg.CliproxyEndpoint,
+		Username:               cfg.CliproxyUsername,
+		Password:               cfg.CliproxyPassword,
+		Region:                 cfg.CliproxyRegion,
+		SessionSalt:            cfg.CliproxySessionSalt,
+		TTLMinutes:             cfg.CliproxyTTLMinutes,
+		Precheck:               cfg.CliproxyPrecheck == nil || *cfg.CliproxyPrecheck,
+		PrecheckMaxAttempts:    cfg.CliproxyPrecheckMaxAttempts,
+		PrecheckEndpoint:       cfg.CliproxyPrecheckEndpoint,
+		PrecheckTimeoutSeconds: cfg.CliproxyPrecheckTimeoutSeconds,
 	})
 	if strings.TrimSpace(cfg.CliproxyEndpoint) != "" && strings.TrimSpace(cfg.CliproxyUsername) != "" {
 		log.Printf("WA cliproxy dynamic sticky proxy enabled (endpoint=%s, per-account sid; credentials not logged)", cfg.CliproxyEndpoint)

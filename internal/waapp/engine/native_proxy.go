@@ -2,9 +2,38 @@ package engine
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
+
+// NewProxyHTTPClient builds a standard *http.Client whose requests egress through
+// the given proxy URL (http/https/socks5, with optional embedded credentials).
+// It reuses parseOutboundProxyURL so proxy parsing stays consistent, and relies
+// on the stdlib's native http.ProxyURL support rather than hand-rolling a dialer.
+// This is for simple auxiliary calls (e.g. the cliproxy exit pre-check), NOT the
+// WA registration protocol, which uses the TLS-fingerprinted native client.
+func NewProxyHTTPClient(proxyURL string, timeout time.Duration) (*http.Client, error) {
+	parsed, err := parseOutboundProxyURL(proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	if parsed == nil {
+		return nil, fmt.Errorf("proxy URL is required")
+	}
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	transport := &http.Transport{
+		Proxy:               http.ProxyURL(parsed),
+		ForceAttemptHTTP2:   false,
+		MaxIdleConns:        1,
+		IdleConnTimeout:     timeout,
+		TLSHandshakeTimeout: timeout,
+	}
+	return &http.Client{Timeout: timeout, Transport: transport}, nil
+}
 
 func (e *engineCore) httpForProxy() (*nativeHTTPClient, error) {
 	if _, err := e.proxyURL(); err != nil {
