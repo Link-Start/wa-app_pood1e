@@ -416,6 +416,41 @@ WHERE status=$2 AND COALESCE(last_seen_at, opened_at) < $3`,
 	return tag.RowsAffected(), nil
 }
 
+func (s *PostgresStore) CloseOpenMessageSessionsForIdentity(ctx context.Context, registeredIdentityID string) (int64, error) {
+	if registeredIdentityID == "" {
+		return 0, nil
+	}
+	tag, err := s.pool.Exec(ctx, `UPDATE wa_message_sessions
+SET status=$1, closed_at=now()
+WHERE status=$2 AND registered_identity_id=$3`,
+		waappv1.MessageSessionStatus_MESSAGE_SESSION_STATUS_CLOSED.String(),
+		waappv1.MessageSessionStatus_MESSAGE_SESSION_STATUS_OPEN.String(),
+		registeredIdentityID)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
+// DeleteClosedMessageSessions removes terminal (CLOSED/FAILED) message sessions
+// last updated before the cutoff, skipping any still referenced by inbound
+// messages so the wa_inbound_messages foreign key and history stay intact.
+func (s *PostgresStore) DeleteClosedMessageSessions(ctx context.Context, before time.Time) (int64, error) {
+	if before.IsZero() {
+		return 0, nil
+	}
+	tag, err := s.pool.Exec(ctx, `DELETE FROM wa_message_sessions
+WHERE status IN ($1,$2) AND COALESCE(closed_at, last_seen_at, opened_at) < $3
+  AND NOT EXISTS (SELECT 1 FROM wa_inbound_messages m WHERE m.message_session_id=wa_message_sessions.message_session_id)`,
+		waappv1.MessageSessionStatus_MESSAGE_SESSION_STATUS_CLOSED.String(),
+		waappv1.MessageSessionStatus_MESSAGE_SESSION_STATUS_FAILED.String(),
+		before.UTC())
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (s *PostgresStore) SaveInboundMessages(ctx context.Context, messages []*waappv1.InboundMessage) error {
 	if len(messages) == 0 {
 		return nil

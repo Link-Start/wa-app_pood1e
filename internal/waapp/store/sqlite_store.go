@@ -333,7 +333,22 @@ func (s *SQLiteStore) CloseStaleOpenMessageSessions(ctx context.Context, before 
 	if before.IsZero() {
 		return 0, nil
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT payload FROM wa_sqlite_message_sessions WHERE status=? AND updated_at<?`, waappv1.MessageSessionStatus_MESSAGE_SESSION_STATUS_OPEN.String(), SQLiteTimeValue(before.UTC()))
+	return s.closeOpenMessageSessions(ctx, ` AND updated_at<?`, SQLiteTimeValue(before.UTC()))
+}
+
+func (s *SQLiteStore) CloseOpenMessageSessionsForIdentity(ctx context.Context, registeredIdentityID string) (int64, error) {
+	if registeredIdentityID == "" {
+		return 0, nil
+	}
+	return s.closeOpenMessageSessions(ctx, ` AND registered_identity_id=?`, registeredIdentityID)
+}
+
+// closeOpenMessageSessions flips every OPEN message session that also matches the
+// extra predicate to CLOSED (stamping ClosedAt) and returns the number closed.
+// The status=OPEN filter is always applied; predicate/args narrow it further.
+func (s *SQLiteStore) closeOpenMessageSessions(ctx context.Context, predicate string, args ...any) (int64, error) {
+	queryArgs := append([]any{waappv1.MessageSessionStatus_MESSAGE_SESSION_STATUS_OPEN.String()}, args...)
+	rows, err := s.db.QueryContext(ctx, `SELECT payload FROM wa_sqlite_message_sessions WHERE status=?`+predicate, queryArgs...)
 	if err != nil {
 		return 0, err
 	}
@@ -361,6 +376,25 @@ func (s *SQLiteStore) CloseStaleOpenMessageSessions(ctx context.Context, before 
 		}
 	}
 	return int64(len(sessions)), nil
+}
+
+// DeleteClosedMessageSessions removes terminal (CLOSED/FAILED) message sessions
+// last updated before the cutoff, skipping any that still have inbound messages
+// so persisted history is never orphaned. Returns the number of rows deleted.
+func (s *SQLiteStore) DeleteClosedMessageSessions(ctx context.Context, before time.Time) (int64, error) {
+	if before.IsZero() {
+		return 0, nil
+	}
+	result, err := s.db.ExecContext(ctx, `DELETE FROM wa_sqlite_message_sessions
+WHERE status IN (?,?) AND updated_at<?
+  AND NOT EXISTS (SELECT 1 FROM wa_sqlite_inbound_messages m WHERE m.message_session_id=wa_sqlite_message_sessions.id)`,
+		waappv1.MessageSessionStatus_MESSAGE_SESSION_STATUS_CLOSED.String(),
+		waappv1.MessageSessionStatus_MESSAGE_SESSION_STATUS_FAILED.String(),
+		SQLiteTimeValue(before.UTC()))
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 func (s *SQLiteStore) SaveInboundMessages(ctx context.Context, messages []*waappv1.InboundMessage) error {

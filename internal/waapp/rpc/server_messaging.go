@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"log"
 	"strings"
 	"time"
 
@@ -31,6 +32,14 @@ func (s *messagingHandler) OpenMessageSession(ctx context.Context, req *waappv1.
 	}
 	if loginState.GetStatus() != waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE || loginState.GetWaAccountId() != waID || loginState.GetClientProfileId() != req.GetClientProfileId() {
 		return &waappv1.OpenMessageSessionResponse{Error: shared.ToProtoError(shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "registered identity is not active for WA account profile", false))}, nil
+	}
+	// Close any prior OPEN session for this identity first so at most one stays
+	// OPEN. Best-effort: a failure here must not block opening the new session,
+	// and it self-heals orphan-OPEN rows left by a failed reconnect close.
+	if closed, err := s.store.CloseOpenMessageSessionsForIdentity(ctx, req.GetRegisteredIdentityId()); err != nil {
+		log.Printf("WA open message session close prior open failed: registered_identity=%s error=%v", req.GetRegisteredIdentityId(), shared.SanitizeLogError(err))
+	} else if closed > 0 {
+		log.Printf("WA open message session closed prior open sessions: registered_identity=%s count=%d", req.GetRegisteredIdentityId(), closed)
 	}
 	now := s.clock.Now()
 	session := &waappv1.MessageSession{MessageSessionId: s.ids.NewID("wasess_"), WaAccountId: waID, ClientProfileId: req.GetClientProfileId(), RegisteredIdentityId: req.GetRegisteredIdentityId(), ProtocolProfileId: shared.FirstNonEmpty(req.GetProtocolProfileId(), profile.GetProtocolProfileId()), Status: waappv1.MessageSessionStatus_MESSAGE_SESSION_STATUS_OPEN, OpenedAt: timestamppb.New(now), LastSeenAt: timestamppb.New(now)}

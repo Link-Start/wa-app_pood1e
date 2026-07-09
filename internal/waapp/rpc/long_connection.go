@@ -25,6 +25,7 @@ const (
 	longConnectionMaxBackoff           = 30 * time.Second
 	longConnectionDecryptLimit         = 100
 	staleMessageSessionTTL             = 10 * time.Minute
+	closedMessageSessionRetention      = time.Hour
 	staleMessageSessionCleanupInterval = 5 * time.Minute
 	longConnectionReconcileInterval    = 5 * time.Minute
 )
@@ -328,13 +329,22 @@ func (m *LongConnectionManager) closeStaleMessageSessions(ctx context.Context) {
 	if m == nil || m.host == nil || m.host.Store() == nil {
 		return
 	}
-	closed, err := m.host.Store().CloseStaleOpenMessageSessions(ctx, m.host.Clock().Now().Add(-staleMessageSessionTTL))
+	now := m.host.Clock().Now()
+	closed, err := m.host.Store().CloseStaleOpenMessageSessions(ctx, now.Add(-staleMessageSessionTTL))
 	if err != nil {
 		log.Printf("WA stale message session cleanup failed: %v", shared.SanitizeLogError(err))
 		return
 	}
 	if closed > 0 {
 		log.Printf("WA stale message session cleanup closed=%d", closed)
+	}
+	deleted, err := m.host.Store().DeleteClosedMessageSessions(ctx, now.Add(-closedMessageSessionRetention))
+	if err != nil {
+		log.Printf("WA closed message session prune failed: %v", shared.SanitizeLogError(err))
+		return
+	}
+	if deleted > 0 {
+		log.Printf("WA closed message session prune deleted=%d", deleted)
 	}
 }
 
