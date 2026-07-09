@@ -64,6 +64,14 @@ function waMetrics(status: WaProbeStatus, showSms: boolean): Array<{ label: stri
       { label: '原因', value: accountReasonLabel(status.failureReason, status.accountRawReason) || '号码被 WA 拒绝或封禁', tone: 'bad' },
     ];
   }
+  if (status.accountFlow === 'consent_blocked' || status.accountFlow === 'not_allowed') {
+    const consent = status.accountFlow === 'consent_blocked';
+    return [
+      { label: '结果', value: accountFlowLabel(status.accountFlow), tone: 'bad' },
+      { label: '可注册', value: '否', tone: 'bad' },
+      { label: '原因', value: accountReasonLabel(status.accountRawReason, status.failureReason) || (consent ? '需完成年龄或家长同意验证' : 'WA 不允许该号码注册'), tone: 'bad' },
+    ];
+  }
   if (status.accountFlow === 'rate_limited') {
     return [
       { label: '请求', value: '冷却中', tone: 'warn' },

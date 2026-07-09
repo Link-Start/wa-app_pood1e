@@ -110,6 +110,8 @@ export function accountFlowLabel(value?: string) {
     case 'registered': return '旧设备可用';
     case 'not_registered': return '无旧设备记录';
     case 'blocked': return '号码被拒绝';
+    case 'consent_blocked': return '需年龄/家长同意验证';
+    case 'not_allowed': return '不允许注册';
     case 'invalid_number': return '号码格式异常';
     case 'rate_limited': return '请求冷却中';
     case 'probe_failed': return '检测失败';
@@ -143,6 +145,9 @@ export function accountReasonLabel(...values: Array<string | undefined>) {
   if (!normalized) return '';
   if (hasAny(normalized, ['format_wrong'])) return '号码格式不符合 WA 规则';
   if (hasAny(normalized, ['length_short', 'length_long'])) return '号码长度不符合 WA 规则';
+  if (hasAny(normalized, ['consent_underage_block', 'consent_impossible_age', 'consent_parent_block', 'consent_parent_linking_ineligible', 'age or parental consent'])) return '需完成年龄或家长同意验证';
+  if (hasAny(normalized, ['biz_not_allowed'])) return '该商业号码不被允许注册';
+  if (hasAny(normalized, ['not_allowed', 'limited_release', 'not allowed'])) return '该号码不被允许注册';
   if (hasAny(normalized, ['blocked'])) return '号码被 WA 拒绝或封禁';
   if (hasAny(normalized, ['too_recent', 'too_many', 'temporarily_unavailable', 'rate_limited', 'cooling_down'])) return '请求过于频繁，请稍后再试';
   if (hasAny(normalized, ['no_routes', 'route_unavailable'])) return '暂无可用验证通道';
