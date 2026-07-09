@@ -28,6 +28,8 @@ export function registrationFailureMessage(result: WaWorkflowResponse, status: W
   const detail = status.failureReason || result.error_message || result.status || '';
   const reason = accountReasonLabel(detail);
   if (status.blocked) return '号码被拒绝/封禁';
+  if (status.accountFlow === 'consent_blocked') return '号码需要年龄/家长同意验证，无法直接注册';
+  if (status.accountFlow === 'not_allowed') return '该号码不被允许注册';
   if (status.accountFlow === 'invalid_number') return reason || '号码无效';
   if (status.smsWaitSeconds && status.smsWaitSeconds > 0) return `请求冷却中，${countdownLabel(status.smsWaitSeconds)} 后重试`;
   if (status.accountFlow === 'rate_limited') return reason || '请求冷却中';

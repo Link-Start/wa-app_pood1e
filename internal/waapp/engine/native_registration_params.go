@@ -699,27 +699,36 @@ func parseExistProbeResult(data map[string]any) wacore.EngineProbeResult {
 	smsWait := verificationSMSCooldownSeconds(data)
 	smsWaitExhausted := verificationSMSWaitExhausted(data)
 	baseProtocolRejected := existProtocolRejected(status, reason)
-	blocked := status == "blocked" || reason == "blocked" || existConsentBlockedReason(reason)
+	blocked := status == "blocked" || reason == "blocked"
+	consentBlocked := existConsentBlockedReason(reason)
+	notAllowed := existNotAllowedReason(reason)
+	// hardReject groups the terminal verdicts that make the number both
+	// unreachable and non-registrable on this device: a ban, an age/parental
+	// consent block, or a not-allowed/limited-release disallow. They share the
+	// same reachability gating but stay distinct account flows downstream.
+	hardReject := blocked || consentBlocked || notAllowed
 	invalidNumber := ExistInvalidNumberReason(reason)
 	rateLimited := ExistRateLimitedReason(reason)
-	consentRequired := !baseProtocolRejected && !blocked && existConsentReason(reason)
-	challengeRequired := !baseProtocolRejected && !blocked && existChallengeReason(reason)
+	consentRequired := !baseProtocolRejected && !hardReject && existConsentReason(reason)
+	challengeRequired := !baseProtocolRejected && !hardReject && existChallengeReason(reason)
 	gated := consentRequired || challengeRequired
-	registered := !baseProtocolRejected && !blocked && !invalidNumber && !rateLimited && !gated && (waOldFallbackEligible(data) || accountTransferFallbackEligible(data) || existRegisteredSignal(status, reason, data))
+	registered := !baseProtocolRejected && !hardReject && !invalidNumber && !rateLimited && !gated && (waOldFallbackEligible(data) || accountTransferFallbackEligible(data) || existRegisteredSignal(status, reason, data))
 	if registered {
 		methodStatuses = upsertVerificationMethodStatus(methodStatuses, "acc_tr", verificationWaitStatus{Present: true})
 	}
 	protocolRejected := baseProtocolRejected
-	notRegistered := !baseProtocolRejected && !blocked && !invalidNumber && !rateLimited && !gated && !registered && existNotRegisteredReason(reason)
+	notRegistered := !baseProtocolRejected && !hardReject && !invalidNumber && !rateLimited && !gated && !registered && existNotRegisteredReason(reason)
 	registeredKnown := registered || invalidNumber || notRegistered
-	canSendSMS := smsProbeAvailableByCooldownOnly(smsWait, smsWaitExhausted, blocked, protocolRejected, invalidNumber, rateLimited)
+	canSendSMS := smsProbeAvailableByCooldownOnly(smsWait, smsWaitExhausted, hardReject, protocolRejected, invalidNumber, rateLimited)
 	methods := methodsFromStatuses(methodStatuses)
-	reachable := !protocolRejected && !blocked && !invalidNumber && !rateLimited && (existReachableStatus(status) || registered || notRegistered || gated)
+	reachable := !protocolRejected && !hardReject && !invalidNumber && !rateLimited && (existReachableStatus(status) || registered || notRegistered || gated)
 	accountFlow := existAccountFlow(existFlowClass{
 		protocolRejected:  protocolRejected,
 		registered:        registered,
 		notRegistered:     notRegistered,
 		blocked:           blocked,
+		consentBlocked:    consentBlocked,
+		notAllowed:        notAllowed,
 		invalidNumber:     invalidNumber,
 		rateLimited:       rateLimited,
 		consentRequired:   consentRequired,
@@ -742,7 +751,7 @@ func parseExistProbeResult(data map[string]any) wacore.EngineProbeResult {
 	case protocolRejected:
 		result.Status = waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED
 		result.Err = existProtocolError(data)
-	case blocked:
+	case hardReject:
 		result.Status = waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_UNREACHABLE
 	case invalidNumber || rateLimited:
 		result.Status = waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_UNREACHABLE
@@ -851,11 +860,27 @@ func existConsentReason(reason string) bool {
 	}
 }
 
-// existConsentBlockedReason reports consent verdicts that hard-block
+// existConsentBlockedReason reports age/parental-consent verdicts that hard-block
 // registration: underage, impossible age, parental block, linking ineligible.
+// These are consent gates, NOT bans: the APK keeps them strictly separate from
+// "blocked" (each has its own age-verification UI), so they resolve to the
+// dedicated AccountProbeFlowConsentBlocked flow rather than the ban flow.
 func existConsentBlockedReason(reason string) bool {
 	switch reason {
 	case "consent_underage_block", "consent_impossible_age", "consent_parent_block", "consent_parent_linking_ineligible":
+		return true
+	default:
+		return false
+	}
+}
+
+// existNotAllowedReason reports verdicts where WA disallows this number or
+// business from registering at all: a terminal, hard rejection (not a ban and
+// not a format error). In the APK these are distinct disallow enums: not_allowed,
+// biz_not_allowed, limited_release.
+func existNotAllowedReason(reason string) bool {
+	switch reason {
+	case "not_allowed", "biz_not_allowed", "limited_release":
 		return true
 	default:
 		return false
@@ -878,6 +903,8 @@ type existFlowClass struct {
 	registered        bool
 	notRegistered     bool
 	blocked           bool
+	consentBlocked    bool
+	notAllowed        bool
 	invalidNumber     bool
 	rateLimited       bool
 	consentRequired   bool
@@ -890,6 +917,10 @@ func existAccountFlow(c existFlowClass) string {
 		return AccountProbeFlowProbeFailed
 	case c.blocked:
 		return AccountProbeFlowBlocked
+	case c.consentBlocked:
+		return AccountProbeFlowConsentBlocked
+	case c.notAllowed:
+		return AccountProbeFlowNotAllowed
 	case c.invalidNumber:
 		return AccountProbeFlowInvalidNumber
 	case c.rateLimited:
@@ -1253,8 +1284,8 @@ func verificationSMSWaitExhausted(data map[string]any) bool {
 	return verificationMethodWaitStatus(data, "sms", true).Exhausted
 }
 
-func smsProbeAvailableByCooldownOnly(smsWait int64, smsWaitExhausted bool, blocked bool, protocolRejected bool, invalidNumber bool, rateLimited bool) bool {
-	return smsWait <= 0 && !smsWaitExhausted && !blocked && !protocolRejected && !invalidNumber && !rateLimited
+func smsProbeAvailableByCooldownOnly(smsWait int64, smsWaitExhausted bool, hardRejected bool, protocolRejected bool, invalidNumber bool, rateLimited bool) bool {
+	return smsWait <= 0 && !smsWaitExhausted && !hardRejected && !protocolRejected && !invalidNumber && !rateLimited
 }
 
 func stringList(value any) []string {

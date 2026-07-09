@@ -361,6 +361,8 @@ func fallbackMethodAvailable(statuses []wacore.VerificationMethodStatus, method 
 func registrationProbeAllowsMethod(result wacore.EngineProbeResult, method waappv1.VerificationDeliveryMethod) bool {
 	if result.Err != nil || result.Blocked ||
 		result.AccountFlow == engine.AccountProbeFlowInvalidNumber ||
+		result.AccountFlow == engine.AccountProbeFlowConsentBlocked ||
+		result.AccountFlow == engine.AccountProbeFlowNotAllowed ||
 		result.AccountFlow == engine.AccountProbeFlowConsentRequired ||
 		result.AccountFlow == engine.AccountProbeFlowChallengeRequired {
 		return false
@@ -494,6 +496,10 @@ func registrationProbeError(result wacore.EngineProbeResult) error {
 		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_RATE_LIMITED, "verification request is cooling down", true)
 	case result.Blocked:
 		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "number is blocked", false)
+	case result.AccountFlow == engine.AccountProbeFlowConsentBlocked:
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "registration cannot proceed pending age or parental consent verification", false)
+	case result.AccountFlow == engine.AccountProbeFlowNotAllowed:
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "this number or business is not allowed to register", false)
 	case result.AccountFlow == engine.AccountProbeFlowConsentRequired:
 		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "registration requires consent before a code can be requested", false)
 	case result.AccountFlow == engine.AccountProbeFlowChallengeRequired:
@@ -627,8 +633,14 @@ func registrationRejectReason(errorMessage string) string {
 	if strings.Contains(normalized, "no_routes") {
 		return "no_routes"
 	}
+	if strings.Contains(normalized, "not allowed") || strings.Contains(normalized, "not_allowed") || strings.Contains(normalized, "biz_not_allowed") || strings.Contains(normalized, "limited_release") {
+		return "not_allowed"
+	}
 	if strings.Contains(normalized, "blocked") {
 		return "blocked"
+	}
+	if strings.Contains(normalized, "age or parental consent") {
+		return "consent_blocked"
 	}
 	if strings.Contains(normalized, "consent") {
 		return "consent_required"

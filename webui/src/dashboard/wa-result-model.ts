@@ -61,6 +61,8 @@ export function outcomeMeta(status: WaProbeStatus, result?: WaWorkflowResponse |
   if (loading) return { label: '执行中', variant: 'secondary' };
   if (!result) return { label: '等待', variant: 'outline' };
   if (status.blocked === true) return { label: '已封禁', variant: 'destructive' };
+  if (status.accountFlow === 'consent_blocked') return { label: '需年龄验证', variant: 'secondary' };
+  if (status.accountFlow === 'not_allowed') return { label: '不允许注册', variant: 'destructive' };
   if (status.accountFlow === 'invalid_number') return { label: '号码异常', variant: 'secondary' };
   if (status.accountFlow === 'rate_limited') return { label: '限流', variant: 'secondary' };
   if (status.requestFailed) return { label: '请求失败', variant: 'destructive' };
@@ -93,7 +95,7 @@ export function metaItems(status: WaProbeStatus, result?: WaWorkflowResponse | n
   return entries;
 }
 function accountFeedback(status: WaProbeStatus) {
-  if (['registered', 'not_registered', 'blocked', 'invalid_number', 'rate_limited'].includes(status.accountFlow)) return '';
+  if (['registered', 'not_registered', 'blocked', 'consent_blocked', 'not_allowed', 'invalid_number', 'rate_limited'].includes(status.accountFlow)) return '';
   const raw = compactJoin([status.accountStatus, status.accountRawStatus, status.accountRawReason, status.accountError], ' / ');
   const normalized = raw.toLowerCase();
   if (!raw) return '';
@@ -167,6 +169,8 @@ function durationSeconds(value: unknown) {
 function deriveAccountFlow(input: { registered?: boolean; blocked?: boolean; smsAvailable?: boolean; accountStatus: string; rawReason: string }) {
   const raw = compactJoin([input.accountStatus, input.rawReason], ' ').toLowerCase();
   if (input.registered === true || raw.includes('exists') || raw.includes('registered')) return 'registered';
+  if (raw.includes('consent_underage_block') || raw.includes('consent_impossible_age') || raw.includes('consent_parent_block') || raw.includes('consent_parent_linking_ineligible')) return 'consent_blocked';
+  if (raw.includes('not_allowed') || raw.includes('limited_release')) return 'not_allowed';
   if (input.blocked === true || raw.includes('blocked')) return 'blocked';
   if (raw.includes('length_short') || raw.includes('length_long') || raw.includes('format_wrong')) return 'invalid_number';
   if (raw.includes('too_recent') || raw.includes('too_many') || raw.includes('temporarily_unavailable')) return 'rate_limited';
@@ -184,7 +188,9 @@ export function waProbeCanStartRegistration(result?: WaWorkflowResponse | null, 
     && status.accountReachable !== false
     && status.blocked !== true
     && status.accountFlow !== 'invalid_number'
-    && status.accountFlow !== 'rate_limited';
+    && status.accountFlow !== 'rate_limited'
+    && status.accountFlow !== 'consent_blocked'
+    && status.accountFlow !== 'not_allowed';
 }
 
 function cooldownActive(value: number | null, elapsedSeconds: number) {
