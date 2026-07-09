@@ -69,6 +69,8 @@ func (g *actionGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		result, err = g.persistLoginState(r.Context(), payload)
 	case "registration/check-login-state":
 		result, err = g.CheckLoginStateWithRunner(r.Context(), payload)
+	case "account/export-protocol-number":
+		result, err = g.exportProtocolNumber(r.Context(), payload)
 	default:
 		writeActionJSON(w, http.StatusNotFound, map[string]string{"error": "unknown WA action"})
 		return
@@ -623,6 +625,30 @@ func (g *actionGateway) CheckLoginStateWithRunner(ctx context.Context, payload m
 		result.ErrorMessage = &msg
 	}
 	return result, nil
+}
+
+// exportProtocolNumberDTO carries the WhatsApp 协议号 6-段 export to the
+// authenticated dashboard. protocol_number embeds this account's private keys
+// (full account control); it lives only in this response and is never logged.
+type exportProtocolNumberDTO struct {
+	Success        bool   `json:"success"`
+	ProtocolNumber string `json:"protocol_number"`
+}
+
+// exportProtocolNumber resolves the account (keyed by wa_account_id or
+// client_profile_id) to its committed native state and returns the 协议号 6-段
+// import string. On failure it returns the error to ServeHTTP, which renders the
+// uniform actionError envelope.
+func (g *actionGateway) exportProtocolNumber(ctx context.Context, payload map[string]any) (any, error) {
+	selector := &waappv1.AccountLoginSelector{
+		WaAccountId:     shared.TextField(payload, "wa_account_id"),
+		ClientProfileId: shared.TextField(payload, "client_profile_id"),
+	}
+	protocolNumber, err := g.server.ExportProtocolNumber(ctx, selector)
+	if err != nil {
+		return nil, err
+	}
+	return exportProtocolNumberDTO{Success: true, ProtocolNumber: protocolNumber}, nil
 }
 
 func (g *actionGateway) commitNativeState(ctx context.Context, phone *waappv1.PhoneTarget, state engine.NativeState) (*waappv1.WAAccount, *waappv1.ClientProfile, *waappv1.ProtocolProfile, error) {

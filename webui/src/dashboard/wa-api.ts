@@ -156,6 +156,17 @@ export async function removeWaAccountProfilePicture(account: WAAccount) {
   return requireAccountSettingsResponse(await api<RemoveAccountProfilePictureResponse>('/api/wa/account-settings/profile/picture/remove', { method: 'POST', body: JSON.stringify({ selector: waAccountSettingsSelector(account) }) }));
 }
 
+export type WaProtocolNumberExportResponse = { success?: boolean; protocol_number?: string; error?: { message?: string }; error_message?: string };
+
+// exportWaProtocolNumber requests the account's WhatsApp 协议号 6-段 string. The
+// returned protocol_number embeds private keys (full account control); the caller
+// must copy it to the clipboard only and never log it.
+export function exportWaProtocolNumber(account: WAAccount | string) {
+  const accountID = typeof account === 'string' ? account : waAccountID(account);
+  if (!accountID) throw new Error('wa_account_id is required');
+  return api<WaProtocolNumberExportResponse>('/api/wa/actions/account/export-protocol-number', { method: 'POST', body: JSON.stringify({ wa_account_id: accountID }) });
+}
+
 export const waAccountID = (account?: WAAccount) => account?.wa_account_id || '';
 export const waAccountTitle = (account?: WAAccount) => account?.display_name?.trim() || account?.phone?.e164_number || waAccountID(account) || '-';
 export function waAccountProfilePictureURL(account: WAAccount | string, version = 'latest') {

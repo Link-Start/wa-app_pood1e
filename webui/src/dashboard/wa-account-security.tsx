@@ -1,10 +1,10 @@
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
-import { ArrowRightLeft, CheckCircle2, KeyRound, Mail, RefreshCw, Send, ShieldCheck } from 'lucide-react';
+import { ArrowRightLeft, CheckCircle2, Copy, KeyRound, Mail, RefreshCw, Send, ShieldCheck } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AccountSettingsOperationStatus } from '../proto/byte/v/forge/waapp/v1/account_settings';
 import type { GetTwoFactorAuthStatusResponse } from '../proto/byte/v/forge/waapp/v1/account_settings';
 import type { WaAccountProjection } from './wa-api';
-import { getWaTwoFactorAuthStatus, requestWaAccountEmailOtp, setWaAccountEmail, setWaTwoFactorAuthSettings, verifyWaAccountEmailOtp, waAccountID, waKeys } from './wa-api';
+import { exportWaProtocolNumber, getWaTwoFactorAuthStatus, requestWaAccountEmailOtp, setWaAccountEmail, setWaTwoFactorAuthSettings, verifyWaAccountEmailOtp, waAccountID, waKeys } from './wa-api';
 import { WaAccountChangeNumberCard } from './wa-account-change-number-card';
 import {
   emailBadgeVariant,
@@ -105,7 +105,20 @@ export function WaAccountSecurityPanel({ account, onDone, onError }: Props) {
     },
     onError: handleError,
   });
-  const busy = twoFactor.isPending || emailSet.isPending || otpRequest.isPending || otpVerify.isPending;
+  const exportProtocolNumber = useMutation({
+    mutationFn: async () => {
+      const resp = await exportWaProtocolNumber(account);
+      const message = resp.error?.message || resp.error_message;
+      if (message) throw new Error(message);
+      const value = resp.protocol_number || '';
+      if (!value) throw new Error('协议号导出为空');
+      // Value-safety: copy to clipboard only; never render or log the 6 段 string.
+      await copyProtocolNumber(value);
+    },
+    onSuccess: () => onDone('协议号已复制到剪贴板'),
+    onError: handleError,
+  });
+  const busy = twoFactor.isPending || emailSet.isPending || otpRequest.isPending || otpVerify.isPending || exportProtocolNumber.isPending;
   const syncing = twoFactorStatus.isFetching;
   const syncFailed = twoFactorStatus.isError && !syncing;
   const refreshStatus = async () => {
@@ -158,6 +171,14 @@ export function WaAccountSecurityPanel({ account, onDone, onError }: Props) {
           actionLabel="换绑手机号"
           disabled={busy}
           onAction={() => setChangeNumberOpen(true)}
+        />
+        <SettingRow
+          icon={<Copy size={15} />}
+          title="协议号(6段)"
+          detail="导出协议号并复制到剪贴板"
+          actionLabel="复制协议号"
+          disabled={busy}
+          onAction={() => exportProtocolNumber.mutate()}
         />
       </div>
 
@@ -250,3 +271,10 @@ function syncFailureMessage(error: unknown) {
 }
 
 function submit(event: FormEvent<HTMLFormElement>, run: () => void) { event.preventDefault(); run(); }
+
+// copyProtocolNumber writes the 协议号 6 段 string to the clipboard. It is never
+// logged; on an unsupported clipboard environment it surfaces an error toast.
+async function copyProtocolNumber(value: string) {
+  if (!navigator.clipboard?.writeText) throw new Error('当前浏览器环境不支持写入剪贴板');
+  await navigator.clipboard.writeText(value);
+}
