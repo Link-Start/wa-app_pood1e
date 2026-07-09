@@ -64,7 +64,7 @@ func (g *actionGateway) probeNumberSMS(ctx context.Context, payload map[string]a
 }
 
 func (g *actionGateway) probeNumberSMSAttempt(ctx context.Context, payload map[string]any, ctxData *waappv1.RequestContext, phone *waappv1.PhoneTarget, nativeEngine *engine.NativeEngine, attempt int) (map[string]any, wacore.WAProxyRoute, bool, string) {
-	route, proxyURL, proxy := g.numberProbeProxy(payload)
+	route, proxyURL, proxy := g.numberProbeProxy(ctx, payload)
 	probeEngine := nativeEngine
 	defer func() {
 		if proxyURL != "" {
@@ -101,8 +101,8 @@ func (g *actionGateway) probeNumberSMSAttempt(ctx context.Context, payload map[s
 	return result, route, false, ""
 }
 
-func (g *actionGateway) numberProbeProxy(payload map[string]any) (wacore.WAProxyRoute, string, map[string]any) {
-	route, useProxy := g.resolveWAProxyRoute(waProxyResolveRequest{
+func (g *actionGateway) numberProbeProxy(ctx context.Context, payload map[string]any) (wacore.WAProxyRoute, string, map[string]any) {
+	route, useProxy := g.resolveWAProxyRoutePrechecked(ctx, waProxyResolveRequest{
 		Payload:     payload,
 		CountryCode: proxyCountryCodeFromPayload(payload),
 	})
